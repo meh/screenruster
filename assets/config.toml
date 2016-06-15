@@ -1,0 +1,11 @@
+[auth]
+use = ["internal"]
+
+[auth.internal]
+password = "test"
+
+[saver]
+use = ["laughing_man"]
+
+[saver.laughing_man]
+blur = true
