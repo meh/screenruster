@@ -1,3 +1,6 @@
+timeout  = 10000
+interval = 360
+
 [auth]
 use = ["internal"]
 

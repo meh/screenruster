@@ -21,6 +21,11 @@ pub enum Window {
 	NoDisplay,
 	NoVisual,
 	NoContext,
+	NoIM,
+	NoIC,
+
+	AlreadyPresent,
+	MissingExtension,
 }
 
 impl From<io::Error> for Error {

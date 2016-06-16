@@ -2,17 +2,18 @@ use std::thread;
 use std::time::{Instant, Duration};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::Arc;
-use std::ops::Deref;
 use std::ptr;
 use std::ffi::CString;
 use std::os::raw::c_void;
 
-use glium;
+use glium::{self, Surface};
 use x11::glx;
+use image::{self, GenericImage};
 
 use error;
 use window;
 use saver::{self, Saver};
+use util::DurationExt;
 
 pub struct Renderer {
 	receiver: Receiver<Event>,
@@ -25,51 +26,108 @@ pub struct Backend {
 
 pub enum Event {
 	State(saver::State),
-	Run(Box<Saver>),
+
+	Start {
+		saver:  Box<Saver>,
+		screen: image::DynamicImage,
+	},
+
+	Stop,
 }
 
 impl Renderer {
+	// TODO: catch panics when dealing with the `saver` and use sane defaults in
+	// case of panic.
 	pub fn spawn(window: Arc<window::Instance>) -> error::Result<Renderer> {
-		let context = unsafe {
-			glium::backend::Context::new(Backend { window: window }, false, Default::default())?
-		};
-
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 
 		thread::spawn(move || {
-			let mut state    = saver::State::Idle;
+			let context = unsafe {
+				glium::backend::Context::new::<_, ()>(Backend { window: window }, false, Default::default()).unwrap()
+			};
 
-//			loop {
-//
-//			}
-//
-//			let mut lag      = 0;
-//			let mut previous = Instant::now();
-//			let mut state    = Default::default();
-//
-//			loop {
-//				let current = Instant::now();
-//				let elapsed = current.duration_since(previous);
-//
-//				previous  = current;
-//				lag      += elapsed.as_msecs();
-//
-//				while lag >= step {
-//					sender.send(Event::State(saver.update());
-//					lag -= step;
-//				}
-//
-//				let mut target = glium::Frame::new(self.context.clone(), self.context.get_framebuffer_dimensions());
-//				target.clear_all((1.0, 1.0, 1.0, 1.0), 1.0, 0);
-//				saver.render(target);
-//
-//				match target.finish() {
-//					Err(ContextLost) => {
-//
-//					}
-//				}
-//			}
+			let mut state  = saver::State::Idle;
+			let mut saver  = None: Option<Box<Saver>>;
+			let mut screen = None: Option<glium::texture::Texture2d>;
+
+			loop {
+				if let saver::State::Idle = state {
+					match receiver.recv().unwrap() {
+						Event::Start { saver: sv, screen: sc } => {
+							state  = saver::State::Starting;
+							saver  = Some(sv);
+							screen = Some({
+								let size  = sc.dimensions();
+								let image = glium::texture::RawImage2d::from_raw_rgba_reversed(sc.to_rgba().into_raw(), size);
+
+								glium::texture::Texture2d::new(&context, image).unwrap()
+							});
+						}
+
+						_ => ()
+					}
+
+					continue;
+				}
+
+				let mut saver  = saver.take().unwrap();
+				let     screen = screen.take().unwrap();
+				let     step   = (saver.step() * 1_000_000.0).round() as u64;
+
+				saver.initialize(context.clone());
+				sender.send(Event::State(saver::State::Starting)).unwrap();
+				saver.start();
+
+				if state != saver.state() {
+					sender.send(Event::State(saver.state())).unwrap();
+					state = saver.state();
+				}
+
+				let mut lag      = 0;
+				let mut previous = Instant::now();
+
+				'render: loop {
+					let now     = Instant::now();
+					let elapsed = now.duration_since(previous);
+
+					previous  = now;
+					lag      += elapsed.as_nanosecs();
+
+					// Update the state.
+					while lag >= step {
+						saver.update();
+
+						if state != saver.state() {
+							sender.send(Event::State(saver.state())).unwrap();
+							state = saver.state();
+						}
+
+						if state == saver::State::Stopped {
+							state = saver::State::Idle;
+							break 'render;
+						}
+
+						lag -= step;
+					}
+
+					// Check if we received any events.
+					if let Ok(event) = receiver.try_recv() {
+						match event {
+							Event::Stop => {
+								saver.stop();
+							}
+
+							_ => ()
+						}
+					}
+
+					let mut target = glium::Frame::new(context.clone(), context.get_framebuffer_dimensions());
+					target.clear_all((0.0, 0.0, 0.0, 1.0), 1.0, 0);
+					saver.render(&mut target, &screen);
+					target.finish().unwrap();
+				}
+			}
 		});
 
 		Ok(Renderer {
@@ -78,16 +136,24 @@ impl Renderer {
 		})
 	}
 
-	pub fn run(&self, saver: Box<Saver>) {
-		self.sender.send(Event::Run(saver));
+	pub fn start(&self, saver: Box<Saver>, screen: image::DynamicImage) {
+		self.sender.send(Event::Start { saver: saver, screen: screen }).unwrap();
+	}
+
+	pub fn stop(&self) {
+		self.sender.send(Event::Stop).unwrap();
 	}
 }
 
-impl Deref for Renderer {
-	type Target = Receiver<Event>;
-
-	fn deref(&self) -> &Self::Target {
+impl AsRef<Receiver<Event>> for Renderer {
+	fn as_ref(&self) -> &Receiver<Event> {
 		&self.receiver
+	}
+}
+
+impl AsRef<Sender<Event>> for Renderer {
+	fn as_ref(&self) -> &Sender<Event> {
+		&self.sender
 	}
 }
 

@@ -1,15 +1,18 @@
 use std::ptr;
 use std::mem;
+use std::str;
 use std::thread;
-use std::ops::Deref;
+use std::time::Duration;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::sync::Arc;
 
-use x11::{xlib, glx};
-use libc::{c_uint};
+use x11::{xlib, glx, keysym};
+use libc::{c_int, c_uint, c_ulong};
+use image;
 
 use error;
 use config;
+use util;
 
 pub struct Window {
 	receiver: Receiver<Event>,
@@ -20,7 +23,11 @@ pub struct Window {
 pub struct Instance {
 	pub display: *mut xlib::Display,
 	pub id:      xlib::Window,
+	pub root:    xlib::Window,
 	pub context: glx::GLXContext,
+
+	pub im: xlib::XIM,
+	pub ic: xlib::XIC,
 
 	pub width:  u32,
 	pub height: u32,
@@ -29,16 +36,32 @@ pub struct Instance {
 unsafe impl Send for Instance { }
 unsafe impl Sync for Instance { }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Clone)]
 pub enum Event {
 	Show,
 	Hide,
 	Activity,
+	Keyboard(Keyboard),
+	Screen(Screen),
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Keyboard {
+	Char(char),
+	Key(c_ulong, bool),
+}
+
+#[derive(Clone)]
+pub enum Screen {
+	Request,
+	Response(image::DynamicImage),
 }
 
 impl Window {
 	pub fn spawn(config: config::Window) -> error::Result<Window> {
 		unsafe {
+			xlib::XInitThreads();
+
 			let display = xlib::XOpenDisplay(ptr::null())
 				.as_mut().ok_or(error::Window::NoDisplay)?;
 
@@ -46,7 +69,7 @@ impl Window {
 			let root   = xlib::XRootWindow(display, screen);
 
 			let info = glx::glXChooseVisual(display, screen,
-				[glx::GLX_RGBA, glx::GLX_DEPTH_SIZE, 24, glx::GLX_DOUBLEBUFFER, glx::GLX_LEVEL, 3, 0].as_ptr() as *mut _)
+				[glx::GLX_RGBA, glx::GLX_DEPTH_SIZE, 24, glx::GLX_DOUBLEBUFFER, 0].as_ptr() as *mut _)
 					.as_mut().ok_or(error::Window::NoVisual)?;
 
 			let colormap = xlib::XCreateColormap(display, root, (*info).visual, xlib::AllocNone);
@@ -67,10 +90,23 @@ impl Window {
 			let context = glx::glXCreateContext(display, info, ptr::null_mut(), 1)
 				.as_mut().ok_or(error::Window::NoContext)?;
 
+			let im = xlib::XOpenIM(display, ptr::null_mut(), ptr::null_mut(), ptr::null_mut())
+				.as_mut().ok_or(error::Window::NoIM)?;
+
+			let ic = util::with("inputStyle", |input_style|
+				util::with("clientWindow", |client_window|
+					xlib::XCreateIC(im, input_style, xlib::XIMPreeditNothing | xlib::XIMStatusNothing,
+						client_window, window, ptr::null_mut::<()>())))
+							.as_mut().ok_or(error::Window::NoIC)?;
+
 			let instance = Arc::new(Instance {
 				display: display,
+				root:    root,
 				id:      window,
 				context: context,
+
+				im: im,
+				ic: ic,
 
 				width:  width,
 				height: height,
@@ -82,20 +118,58 @@ impl Window {
 			// event reception thread
 			{
 				let instance = instance.clone();
+				let sender   = sender.clone();
 
 				thread::spawn(move || unsafe {
 					let mut event = mem::zeroed(): xlib::XEvent;
 
 					loop {
+						// FIXME(meh): find a better way to avoid display locking
+						if xlib::XPending(instance.display) == 0 {
+							thread::sleep(Duration::from_millis(100));
+							continue;
+						}
+
 						xlib::XNextEvent(instance.display, &mut event);
-						sender.send(Event::Activity);
+
+						match event.get_type() {
+							xlib::KeyPress | xlib::KeyRelease => {
+								let     press  = event.get_type() == xlib::KeyPress;
+								let mut key    = xlib::XKeyEvent::from(event);
+								let     code   = key.keycode;
+								let mut ic_sym = 0;
+
+								let mut buffer = [0u8; 16];
+								let     count  = xlib::Xutf8LookupString(instance.ic, mem::transmute(&event),
+									mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int, &mut ic_sym, ptr::null_mut());
+
+								for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+									sender.send(Event::Keyboard(Keyboard::Char(ch))).unwrap();
+								}
+
+								let mut sym = xlib::XKeycodeToKeysym(instance.display, code as xlib::KeyCode, 0);
+
+								if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
+									sym = ic_sym;
+								}
+
+								sender.send(Event::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
+							}
+
+							other => {
+								info!("event: {}", other);
+							}
+						}
+
+						sender.send(Event::Activity).unwrap();
 					}
 				});
 			}
 
-			// window change thread
+			// window changes thread
 			{
 				let instance = instance.clone();
+				let sender   = sender.clone();
 
 				thread::spawn(move || unsafe {
 					loop {
@@ -106,6 +180,31 @@ impl Window {
 
 							Ok(Event::Hide) => {
 								xlib::XUnmapWindow(instance.display, instance.id);
+							}
+
+							Ok(Event::Screen(Screen::Request)) => {
+								let ximage = xlib::XGetImage(instance.display, instance.root,
+									0, 0, instance.width, instance.height,
+									xlib::XAllPlanes(), xlib::ZPixmap)
+										.as_mut().unwrap();
+
+								let r = (*ximage).red_mask;
+								let g = (*ximage).green_mask;
+								let b = (*ximage).blue_mask;
+
+								let mut image = image::DynamicImage::new_rgb8(instance.width, instance.height);
+
+								for (x, y, px) in image.as_mut_rgb8().unwrap().enumerate_pixels_mut() {
+									let pixel = xlib::XGetPixel(ximage, x as c_int, y as c_int);
+
+									px[0] = ((pixel & r) >> 16) as u8;
+									px[1] = ((pixel & g) >> 8)  as u8;
+									px[2] = ((pixel & b) >> 0)  as u8;
+								}
+
+								xlib::XDestroyImage(ximage);
+
+								sender.send(Event::Screen(Screen::Response(image))).unwrap()
 							}
 
 							Ok(_)  => (),
@@ -127,16 +226,28 @@ impl Window {
 		self.instance.clone()
 	}
 
-	pub fn send(&self, event: Event) -> Result<(), SendError<Event>> {
-		self.sender.send(event)
+	pub fn show(&self) {
+		self.sender.send(Event::Show).unwrap();
+	}
+
+	pub fn hide(&self) {
+		self.sender.send(Event::Hide).unwrap();
+	}
+
+	pub fn screenshot(&self) {
+		self.sender.send(Event::Screen(Screen::Request)).unwrap();
 	}
 }
 
-impl Deref for Window {
-	type Target = Receiver<Event>;
-
-	fn deref(&self) -> &Self::Target {
+impl AsRef<Receiver<Event>> for Window {
+	fn as_ref(&self) -> &Receiver<Event> {
 		&self.receiver
+	}
+}
+
+impl AsRef<Sender<Event>> for Window {
+	fn as_ref(&self) -> &Sender<Event> {
+		&self.sender
 	}
 }
 

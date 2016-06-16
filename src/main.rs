@@ -1,4 +1,8 @@
-#![feature(type_ascription, question_mark, associated_type_defaults, mpsc_select)]
+#![feature(type_ascription, question_mark, associated_type_defaults, mpsc_select, box_syntax)]
+
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 extern crate toml;
 extern crate clap;
@@ -6,10 +10,11 @@ extern crate xdg;
 
 extern crate libc;
 extern crate dbus;
-extern crate x11;
 
 #[macro_use]
 extern crate glium;
+extern crate image;
+extern crate x11;
 
 use clap::{ArgMatches, Arg, App, SubCommand};
 use glium::{Surface};
@@ -34,9 +39,10 @@ mod renderer;
 use renderer::Renderer;
 
 mod saver;
-use saver::Saver;
 
 fn main() {
+	env_logger::init().unwrap();
+
 	let matches = App::new("screenruster")
 		.version("0.1")
 		.author("meh. <meh@schizofreni.co>")
@@ -59,34 +65,56 @@ fn main() {
 	return server(matches, config).unwrap();
 }
 
-fn lock(matches: ArgMatches, config: Config) -> error::Result<()> {
+fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn server(matches: ArgMatches, config: Config) -> error::Result<()> {
+fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let server   = Server::spawn(config.server())?;
 	let window   = Window::spawn(config.window())?;
 	let renderer = Renderer::spawn(window.instance())?;
 
-	window.send(window::Event::Show);
+	// XXX
+	window.screenshot();
+
+	// XXX: select! is icky, this works around shadowing the outer name
+	let s = server.as_ref();
+	let w = window.as_ref();
+	let r = renderer.as_ref();
 
 	loop {
 		select! {
-			event = server.recv() => {
-
+			event = s.recv() => {
+				info!("server: {:?}", event);
 			},
 
-			event = window.recv() => {
+			event = w.recv() => {
+				match event {
+					Ok(window::Event::Keyboard(window::Keyboard::Char('q'))) =>
+						break,
 
+					Ok(window::Event::Screen(window::Screen::Response(screen))) => {
+						window.show();
+						renderer.start(box saver::laughing_man::Saver::new(config.saver("laughing_man"))?, screen);
+					}
+
+					_ => ()
+				}
 			},
 
-			state = renderer.recv() => {
+			event = r.recv() => {
+				match event {
+					Ok(renderer::Event::State(state)) => {
+						info!("renderer: {:?}", state);
+					}
 
+					_ => ()
+				}
 			}
 		}
 	}
 
-	window.send(window::Event::Hide);
+	window.hide();
 
 	Ok(())
 }

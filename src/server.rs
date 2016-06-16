@@ -1,9 +1,7 @@
 use std::thread;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::ops::Deref;
 
-use dbus::{Connection, BusType};
-use dbus::tree::{Tree, Factory, MethodFn};
+use dbus;
 
 use error;
 use config;
@@ -16,6 +14,7 @@ pub struct Server {
 #[derive(Debug)]
 pub enum Event {
 	Error(error::Error),
+	Method(dbus::Message),
 }
 
 impl Server {
@@ -24,11 +23,19 @@ impl Server {
 		let (i_sender, receiver) = channel();
 
 		thread::spawn(move || {
-			let connection = Connection::get_private(BusType::Session).unwrap();
+			let connection = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
 			connection.register_name("meh.screen.saver", 0).unwrap();
 
-			for event in connection.iter(1_000) {
-				println!("{:?}", event);
+			for item in connection.iter(1_000_000) {
+				match item {
+					dbus::ConnectionItem::MethodCall(message) => {
+						sender.send(Event::Method(message));
+					}
+
+					other => {
+						info!("dbus: {:?}", other);
+					}
+				}
 			}
 		});
 
@@ -39,11 +46,15 @@ impl Server {
 	}
 }
 
-impl Deref for Server {
-	type Target = Receiver<Event>;
-
-	fn deref(&self) -> &Self::Target {
+impl AsRef<Receiver<Event>> for Server {
+	fn as_ref(&self) -> &Receiver<Event> {
 		&self.receiver
+	}
+}
+
+impl AsRef<Sender<Event>> for Server {
+	fn as_ref(&self) -> &Sender<Event> {
+		&self.sender
 	}
 }
 

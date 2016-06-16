@@ -24,7 +24,8 @@ pub struct Server {
 
 #[derive(Clone, Debug)]
 pub struct Window {
-
+	pub timeout: i16,
+	pub interval: i16,
 }
 
 #[derive(Clone, Debug)]
@@ -61,7 +62,10 @@ impl Config {
 			},
 
 			window: {
-				Window { }
+				Window {
+					timeout:  table.get("timeout").and_then(|v| v.as_integer()).map(|v| v as i16).unwrap_or(360),
+					interval: table.get("interval").and_then(|v| v.as_integer()).map(|v| v as i16).unwrap_or(360),
+				}
 			},
 
 			auth: {
@@ -86,5 +90,23 @@ impl Config {
 
 	pub fn window(&self) -> Window {
 		self.window.clone()
+	}
+
+	pub fn auth<S: AsRef<str>>(&self, name: S) -> toml::Table {
+		if let Some(conf) = self.auth.config.get(name.as_ref()) {
+			conf.clone()
+		}
+		else {
+			toml::Table::new()
+		}
+	}
+
+	pub fn saver<S: AsRef<str>>(&self, name: S) -> toml::Table {
+		if let Some(conf) = self.saver.config.get(name.as_ref()) {
+			conf.clone()
+		}
+		else {
+			toml::Table::new()
+		}
 	}
 }
