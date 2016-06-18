@@ -4,32 +4,44 @@ use glium;
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum State {
-	Idle,
-	Starting,
-	Started,
+	None,
+	Begin,
 	Running,
-	Stopping,
-	Stopped,
+	End,
 }
 
 impl Default for State {
 	fn default() -> State {
-		State::Idle
+		State::None
 	}
 }
 
 pub trait Saver: Send {
-	fn step(&self) -> f64 {
-		0.015
-	}
+	/// The update step for the render loop.
+	fn step(&self) -> f64 { 0.015 }
 
-	fn initialize(&mut self, context: Rc<glium::backend::Context>);
-	fn start(&mut self);
-	fn stop(&mut self);
+	/// Initialize any GL related stuff.
+	fn initialize(&mut self, context: Rc<glium::backend::Context>) { }
 
+	/// The dialog is now `active` or not.
+	fn dialog(&mut self, active: bool) { }
+
+	/// The saver has been started, useful to implement a fade in or animation to
+	/// only show at the beginning.
+	fn begin(&mut self);
+
+	/// The saver has been stopped, useful to implement a fade out or animation
+	/// to show at the end.
+	fn end(&mut self);
+
+	/// Return the current saver state.
 	fn state(&self) -> State;
-	fn update(&mut self);
-	fn render(&self, target: &mut glium::Frame, screen: &glium::texture::Texture2d);
+
+	/// Called each `step` milliseconds.
+	fn update(&mut self) { }
+
+	/// Render the saver.
+	fn render(&self, target: &mut glium::Frame, screen: &glium::texture::Texture2d) { }
 }
 
 pub mod laughing_man;

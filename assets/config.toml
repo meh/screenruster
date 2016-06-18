@@ -1,5 +1,9 @@
-timeout  = 10000
-interval = 360
+[timer]
+beat    = 10
+timeout = 5
+lock    = 0
+cycle   = false
+blank   = false
 
 [auth]
 use = ["internal"]

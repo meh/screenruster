@@ -86,22 +86,16 @@ impl super::Saver for Saver {
 		});
 	}
 
-	fn start(&mut self) {
-		self.state = super::State::Started;
+	fn begin(&mut self) {
+		self.state = super::State::Running;
 	}
 
-	fn stop(&mut self) {
-		self.state = super::State::Stopped;
+	fn end(&mut self) {
+		self.state = super::State::None;
 	}
 
 	fn state(&self) -> super::State {
 		self.state
-	}
-
-	fn update(&mut self) {
-		if self.state == super::State::Started {
-			self.state = super::State::Running;
-		}
 	}
 
 	fn render(&self, target: &mut glium::Frame, screen: &glium::texture::Texture2d) {

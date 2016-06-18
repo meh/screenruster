@@ -7,12 +7,17 @@ use error;
 use config;
 
 pub struct Server {
-	receiver: Receiver<Event>,
-	sender:   Sender<Event>,
+	receiver: Receiver<Response>,
+	sender:   Sender<Request>,
 }
 
 #[derive(Debug)]
-pub enum Event {
+pub enum Request {
+
+}
+
+#[derive(Debug)]
+pub enum Response {
 	Error(error::Error),
 	Method(dbus::Message),
 }
@@ -29,7 +34,7 @@ impl Server {
 			for item in connection.iter(1_000_000) {
 				match item {
 					dbus::ConnectionItem::MethodCall(message) => {
-						sender.send(Event::Method(message));
+						sender.send(Response::Method(message));
 					}
 
 					other => {
@@ -46,14 +51,14 @@ impl Server {
 	}
 }
 
-impl AsRef<Receiver<Event>> for Server {
-	fn as_ref(&self) -> &Receiver<Event> {
+impl AsRef<Receiver<Response>> for Server {
+	fn as_ref(&self) -> &Receiver<Response> {
 		&self.receiver
 	}
 }
 
-impl AsRef<Sender<Event>> for Server {
-	fn as_ref(&self) -> &Sender<Event> {
+impl AsRef<Sender<Request>> for Server {
+	fn as_ref(&self) -> &Sender<Request> {
 		&self.sender
 	}
 }

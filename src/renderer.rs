@@ -16,23 +16,25 @@ use saver::{self, Saver};
 use util::DurationExt;
 
 pub struct Renderer {
-	receiver: Receiver<Event>,
-	sender:   Sender<Event>,
+	receiver: Receiver<Response>,
+	sender:   Sender<Request>,
 }
 
 pub struct Backend {
 	pub window: Arc<window::Instance>,
 }
 
-pub enum Event {
-	State(saver::State),
-
-	Start {
-		saver:  Box<Saver>,
-		screen: image::DynamicImage,
-	},
-
+pub enum Request {
+	Initialize(Box<Saver>),
+	Start(image::DynamicImage),
+	Dialog(bool),
 	Stop,
+}
+
+pub enum Response {
+	Initialized,
+	Started,
+	Stopped,
 }
 
 impl Renderer {
@@ -44,22 +46,30 @@ impl Renderer {
 
 		thread::spawn(move || {
 			let context = unsafe {
-				glium::backend::Context::new::<_, ()>(Backend { window: window }, false, Default::default()).unwrap()
+				glium::backend::Context::new::<_, ()>(Backend { window: window },
+					false, Default::default()).unwrap()
 			};
 
-			let mut state  = saver::State::Idle;
+			let mut state  = saver::State::default();
 			let mut saver  = None: Option<Box<Saver>>;
 			let mut screen = None: Option<glium::texture::Texture2d>;
 
 			loop {
-				if let saver::State::Idle = state {
+				if let saver::State::None = state {
 					match receiver.recv().unwrap() {
-						Event::Start { saver: sv, screen: sc } => {
-							state  = saver::State::Starting;
-							saver  = Some(sv);
+						Request::Initialize(mut sv) => {
+							sv.initialize(context.clone());
+							saver = Some(sv);
+
+							sender.send(Response::Initialized).unwrap();
+						}
+
+						Request::Start(sc) => {
+							state  = saver::State::Begin;
 							screen = Some({
 								let size  = sc.dimensions();
-								let image = glium::texture::RawImage2d::from_raw_rgba_reversed(sc.to_rgba().into_raw(), size);
+								let image = glium::texture::RawImage2d::from_raw_rgba_reversed(
+									sc.to_rgba().into_raw(), size);
 
 								glium::texture::Texture2d::new(&context, image).unwrap()
 							});
@@ -75,14 +85,8 @@ impl Renderer {
 				let     screen = screen.take().unwrap();
 				let     step   = (saver.step() * 1_000_000.0).round() as u64;
 
-				saver.initialize(context.clone());
-				sender.send(Event::State(saver::State::Starting)).unwrap();
-				saver.start();
-
-				if state != saver.state() {
-					sender.send(Event::State(saver.state())).unwrap();
-					state = saver.state();
-				}
+				sender.send(Response::Started);
+				saver.begin();
 
 				let mut lag      = 0;
 				let mut previous = Instant::now();
@@ -98,24 +102,23 @@ impl Renderer {
 					while lag >= step {
 						saver.update();
 
-						if state != saver.state() {
-							sender.send(Event::State(saver.state())).unwrap();
-							state = saver.state();
-						}
-
-						if state == saver::State::Stopped {
-							state = saver::State::Idle;
+						if state == saver::State::None {
+							state = saver::State::None;
 							break 'render;
 						}
 
 						lag -= step;
 					}
 
-					// Check if we received any events.
+					// Check if we received any requests.
 					if let Ok(event) = receiver.try_recv() {
 						match event {
-							Event::Stop => {
-								saver.stop();
+							Request::Stop => {
+								saver.end();
+							}
+
+							Request::Dialog(active) => {
+								saver.dialog(active);
 							}
 
 							_ => ()
@@ -127,6 +130,8 @@ impl Renderer {
 					saver.render(&mut target, &screen);
 					target.finish().unwrap();
 				}
+
+				sender.send(Response::Stopped);
 			}
 		});
 
@@ -136,23 +141,27 @@ impl Renderer {
 		})
 	}
 
-	pub fn start(&self, saver: Box<Saver>, screen: image::DynamicImage) {
-		self.sender.send(Event::Start { saver: saver, screen: screen }).unwrap();
+	pub fn initialize(&self, saver: Box<Saver>) {
+		self.sender.send(Request::Initialize(saver)).unwrap();
+	}
+
+	pub fn start(&self, screen: image::DynamicImage) {
+		self.sender.send(Request::Start(screen)).unwrap();
 	}
 
 	pub fn stop(&self) {
-		self.sender.send(Event::Stop).unwrap();
+		self.sender.send(Request::Stop).unwrap();
 	}
 }
 
-impl AsRef<Receiver<Event>> for Renderer {
-	fn as_ref(&self) -> &Receiver<Event> {
+impl AsRef<Receiver<Response>> for Renderer {
+	fn as_ref(&self) -> &Receiver<Response> {
 		&self.receiver
 	}
 }
 
-impl AsRef<Sender<Event>> for Renderer {
-	fn as_ref(&self) -> &Sender<Event> {
+impl AsRef<Sender<Request>> for Renderer {
+	fn as_ref(&self) -> &Sender<Request> {
 		&self.sender
 	}
 }
