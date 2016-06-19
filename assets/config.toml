@@ -1,6 +1,6 @@
 [timer]
 beat    = 10
-timeout = 5
+timeout = 1
 lock    = 0
 cycle   = false
 blank   = false
@@ -14,5 +14,11 @@ password = "test"
 [saver]
 use = ["laughing_man"]
 
-[saver.laughing_man]
-blur = true
+[saver.laughing_man.blur]
+max   = 1.2
+step  = 0.00001
+count = 4
+
+[saver.laughing_man.image]
+rotate = 0.000005
+scale  = 400.0
