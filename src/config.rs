@@ -3,7 +3,7 @@ use std::io::{self, Read};
 use std::path::PathBuf;
 use std::collections::HashMap;
 
-use toml;
+use api::config;
 use clap::ArgMatches;
 use xdg;
 
@@ -50,13 +50,13 @@ pub struct Window {
 #[derive(Clone, Default, Debug)]
 pub struct Auth {
 	using: Vec<String>,
-	table: HashMap<String, toml::Table>,
+	table: HashMap<String, config::Table>,
 }
 
 #[derive(Clone, Default, Debug)]
 pub struct Saver {
 	using: Vec<String>,
-	table: HashMap<String, toml::Table>,
+	table: HashMap<String, config::Table>,
 }
 
 impl Config {
@@ -66,14 +66,14 @@ impl Config {
 		}
 		else {
 			xdg::BaseDirectories::with_prefix("screenruster").unwrap()
-				.place_config_file("config.toml").unwrap()
+				.place_config_file("config.config").unwrap()
 		};
 
 		let mut file    = File::open(path).unwrap();
 		let mut content = String::new();
 		file.read_to_string(&mut content).unwrap();
 
-		let table = toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?;
+		let table = config::Parser::new(&content).parse().ok_or(error::Error::Parse)?;
 
 		Ok(Config {
 
@@ -117,7 +117,7 @@ impl Config {
 						for using in list {
 							if let Some(name) = using.as_str() {
 								config.using.push(name.into());
-								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).map(|v| v.clone()).unwrap_or(toml::Table::new()));
+								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).cloned().unwrap_or_default());
 							}
 						}
 					}
@@ -134,7 +134,7 @@ impl Config {
 						for using in list {
 							if let Some(name) = using.as_str() {
 								config.using.push(name.into());
-								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).map(|v| v.clone()).unwrap_or(toml::Table::new()));
+								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).cloned().unwrap_or_default());
 							}
 						}
 					}
@@ -157,21 +157,21 @@ impl Config {
 		self.window.clone()
 	}
 
-	pub fn auth<S: AsRef<str>>(&self, name: S) -> toml::Table {
+	pub fn auth<S: AsRef<str>>(&self, name: S) -> config::Table {
 		if let Some(conf) = self.auth.table.get(name.as_ref()) {
 			conf.clone()
 		}
 		else {
-			toml::Table::new()
+			config::Table::new()
 		}
 	}
 
-	pub fn saver<S: AsRef<str>>(&self, name: S) -> toml::Table {
+	pub fn saver<S: AsRef<str>>(&self, name: S) -> config::Table {
 		if let Some(conf) = self.saver.table.get(name.as_ref()) {
 			conf.clone()
 		}
 		else {
-			toml::Table::new()
+			config::Table::new()
 		}
 	}
 }

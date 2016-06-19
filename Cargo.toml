@@ -1,39 +1,42 @@
 [package]
-name = "screenruster"
+name    = "screenruster"
 version = "0.1.0"
+
 authors = ["meh. <meh@schizofreni.co>"]
+license = "WTFPL"
 
-[features]
-default = ["auth-internal"]
-
-# authorization methods
-auth-internal = []
-
-# screen saver dependencies
-saver-laughing-man = []
+description = "X11 screen saver and locker."
+repository  = "https://github.com/meh/screenruster"
+keywords    = ["x11", "screensaver"]
 
 [dependencies]
 log        = "0.3"
 env_logger = "0.3"
 
-toml  = "0.1"
 clap  = "2"
 xdg   = "2"
 
 libc  = "0.2"
 dbus  = "0.3"
 
-[dependencies.image]
-version          = "*"
-default-features = false
-features         = ["jpeg", "png", "ppm", "tga", "tiff", "webp", "bmp"]
-
-[dependencies.glium]
-version          = "*"
-default-features = false
+[dependencies.api]
+path = "saver/api"
 
 [dependencies.x11]
 #version  = "2"
 git      = "https://github.com/meh/x11-rs"
 branch   = "xss"
-features = ["glx", "xlib", "xss"]
+features = ["glx", "xlib"]
+
+[features]
+default = ["auth-internal", "saver-laughing-man"]
+
+# authorization methods
+auth-internal = []
+
+# screen saver dependencies
+saver-laughing-man = ["laughing_man"]
+
+[dependencies.laughing_man]
+optional = true
+path     = "saver/laughing_man"

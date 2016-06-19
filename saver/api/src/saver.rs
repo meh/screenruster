@@ -1,6 +1,5 @@
 use std::rc::Rc;
-
-use glium;
+use gl;
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum State {
@@ -21,7 +20,7 @@ pub trait Saver: Send {
 	fn step(&self) -> f64 { 0.015 }
 
 	/// Initialize any GL related stuff.
-	fn initialize(&mut self, context: Rc<glium::backend::Context>) { }
+	fn initialize(&mut self, context: Rc<gl::backend::Context>) { }
 
 	/// The dialog is now `active` or not.
 	fn dialog(&mut self, active: bool) { }
@@ -41,7 +40,5 @@ pub trait Saver: Send {
 	fn update(&mut self) { }
 
 	/// Render the saver.
-	fn render(&self, target: &mut glium::Frame, screen: &glium::texture::Texture2d) { }
+	fn render(&self, target: &mut gl::Frame, screen: &gl::texture::Texture2d) { }
 }
-
-pub mod laughing_man;

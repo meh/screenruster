@@ -1,30 +1,30 @@
-#![feature(type_ascription, question_mark, associated_type_defaults, mpsc_select, box_syntax)]
+#![feature(type_ascription, question_mark, associated_type_defaults, mpsc_select)]
 
 #[macro_use]
 extern crate log;
 extern crate env_logger;
 
-extern crate toml;
 extern crate clap;
 extern crate xdg;
 
 extern crate libc;
 extern crate dbus;
 
-#[macro_use]
-extern crate glium;
-extern crate image;
 extern crate x11;
 
+#[macro_use]
+extern crate api;
+
+#[cfg(feature = "saver-laughing-man")]
+extern crate laughing_man;
+
 use clap::{ArgMatches, Arg, App, SubCommand};
-use glium::{Surface};
+use api::gl::{Surface};
 
 #[macro_use]
 mod util;
-use util::DurationExt;
 
 mod error;
-pub use error::Error;
 
 mod config;
 use config::Config;
@@ -40,8 +40,6 @@ use window::Window;
 
 mod renderer;
 use renderer::Renderer;
-
-mod saver;
 
 fn main() {
 	env_logger::init().unwrap();
@@ -65,7 +63,7 @@ fn main() {
 		return lock(submatches.clone(), config).unwrap();
 	}
 
-	return server(matches, config).unwrap();
+	server(matches, config).unwrap()
 }
 
 fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
@@ -100,7 +98,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					// the renderer and saver.
 					timer::Response::Start => {
 						timer.started();
-						renderer.initialize(box saver::laughing_man::Saver::new(config.saver("laughing_man"))?);
+						renderer.initialize(laughing_man::new(config.saver("laughing_man")));
 					}
 
 					timer::Response::Lock => {

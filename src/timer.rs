@@ -89,7 +89,7 @@ impl Timer {
 							// If it's time to lock, send the message and enable the lock guard.
 							if start.elapsed().as_secs() >= after as u64 {
 								locked = Some(Instant::now());
-								sender.send(Response::Lock);
+								sender.send(Response::Lock).unwrap();
 							}
 						}
 					}

@@ -1,18 +1,18 @@
 use std::thread;
-use std::time::{Instant, Duration};
+use std::time::Instant;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::Arc;
 use std::ptr;
 use std::ffi::CString;
 use std::os::raw::c_void;
 
-use glium::{self, Surface};
 use x11::glx;
-use image::{self, GenericImage};
+use api::gl::{self, Surface};
+use api::image::{self, GenericImage};
+use api::{self, Saver};
 
 use error;
 use window;
-use saver::{self, Saver};
 use util::DurationExt;
 
 pub struct Renderer {
@@ -46,16 +46,16 @@ impl Renderer {
 
 		thread::spawn(move || {
 			let context = unsafe {
-				glium::backend::Context::new::<_, ()>(Backend { window: window },
+				gl::backend::Context::new::<_, ()>(Backend { window: window },
 					false, Default::default()).unwrap()
 			};
 
-			let mut state  = saver::State::default();
+			let mut state  = api::State::default();
 			let mut saver  = None: Option<Box<Saver>>;
-			let mut screen = None: Option<glium::texture::Texture2d>;
+			let mut screen = None: Option<gl::texture::Texture2d>;
 
 			loop {
-				if let saver::State::None = state {
+				if let api::State::None = state {
 					match receiver.recv().unwrap() {
 						Request::Initialize(mut sv) => {
 							sv.initialize(context.clone());
@@ -65,13 +65,13 @@ impl Renderer {
 						}
 
 						Request::Start(sc) => {
-							state  = saver::State::Begin;
+							state  = api::State::Begin;
 							screen = Some({
 								let size  = sc.dimensions();
-								let image = glium::texture::RawImage2d::from_raw_rgba_reversed(
+								let image = gl::texture::RawImage2d::from_raw_rgba_reversed(
 									sc.to_rgba().into_raw(), size);
 
-								glium::texture::Texture2d::new(&context, image).unwrap()
+								gl::texture::Texture2d::new(&context, image).unwrap()
 							});
 						}
 
@@ -85,7 +85,7 @@ impl Renderer {
 				let     screen = screen.take().unwrap();
 				let     step   = (saver.step() * 1_000_000.0).round() as u64;
 
-				sender.send(Response::Started);
+				sender.send(Response::Started).unwrap();
 				saver.begin();
 
 				let mut lag      = 0;
@@ -102,8 +102,8 @@ impl Renderer {
 					while lag >= step {
 						saver.update();
 
-						if state == saver::State::None {
-							state = saver::State::None;
+						if state == api::State::None {
+							state = api::State::None;
 							break 'render;
 						}
 
@@ -125,13 +125,13 @@ impl Renderer {
 						}
 					}
 
-					let mut target = glium::Frame::new(context.clone(), context.get_framebuffer_dimensions());
+					let mut target = gl::Frame::new(context.clone(), context.get_framebuffer_dimensions());
 					target.clear_all((0.0, 0.0, 0.0, 1.0), 1.0, 0);
 					saver.render(&mut target, &screen);
 					target.finish().unwrap();
 				}
 
-				sender.send(Response::Stopped);
+				sender.send(Response::Stopped).unwrap();
 			}
 		});
 
@@ -166,8 +166,8 @@ impl AsRef<Sender<Request>> for Renderer {
 	}
 }
 
-unsafe impl glium::backend::Backend for Backend {
-	fn swap_buffers(&self) -> Result<(), glium::SwapBuffersError> {
+unsafe impl gl::backend::Backend for Backend {
+	fn swap_buffers(&self) -> Result<(), gl::SwapBuffersError> {
 		unsafe {
 			glx::glXSwapBuffers(self.window.display, self.window.id);
 		}

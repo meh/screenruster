@@ -34,7 +34,7 @@ impl Server {
 			for item in connection.iter(1_000_000) {
 				match item {
 					dbus::ConnectionItem::MethodCall(message) => {
-						sender.send(Response::Method(message));
+						sender.send(Response::Method(message)).unwrap();
 					}
 
 					other => {

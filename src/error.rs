@@ -2,7 +2,7 @@ use std::fmt;
 use std::error;
 use std::io;
 
-use glium;
+use api;
 use dbus;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -10,8 +10,8 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
 	Io(io::Error),
-	ContextCreation(glium::GliumCreationError<Window>),
-	SwapBuffers(glium::SwapBuffersError),
+	ContextCreation(api::gl::GliumCreationError<Window>),
+	SwapBuffers(api::gl::SwapBuffersError),
 	DBus(dbus::Error),
 	Parse,
 }
@@ -36,18 +36,18 @@ impl From<io::Error> for Error {
 
 impl From<Window> for Error {
 	fn from(value: Window) -> Self {
-		Error::ContextCreation(glium::GliumCreationError::BackendCreationError(value))
+		Error::ContextCreation(api::gl::GliumCreationError::BackendCreationError(value))
 	}
 }
 
-impl From<glium::GliumCreationError<Window>> for Error {
-	fn from(value: glium::GliumCreationError<Window>) -> Self {
+impl From<api::gl::GliumCreationError<Window>> for Error {
+	fn from(value: api::gl::GliumCreationError<Window>) -> Self {
 		Error::ContextCreation(value)
 	}
 }
 
-impl From<glium::SwapBuffersError> for Error {
-	fn from(value: glium::SwapBuffersError) -> Self {
+impl From<api::gl::SwapBuffersError> for Error {
+	fn from(value: api::gl::SwapBuffersError) -> Self {
 		Error::SwapBuffers(value)
 	}
 }

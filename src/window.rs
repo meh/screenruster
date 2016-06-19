@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use x11::{xlib, glx, keysym};
 use libc::{c_int, c_uint, c_ulong};
-use image;
+use api::image;
 
 use error;
 use config;
@@ -148,7 +148,7 @@ impl Window {
 			{
 				let instance = instance.clone();
 
-				thread::spawn(move || unsafe {
+				thread::spawn(move || {
 					let mut event = mem::zeroed(): xlib::XEvent;
 
 					loop {
@@ -207,8 +207,7 @@ impl Window {
 
 						match event.get_type() {
 							xlib::KeyPress | xlib::KeyRelease => {
-								let     press  = event.get_type() == xlib::KeyPress;
-								let mut key    = xlib::XKeyEvent::from(event);
+								let     key    = xlib::XKeyEvent::from(event);
 								let     code   = key.keycode;
 								let mut ic_sym = 0;
 
