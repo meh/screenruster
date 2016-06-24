@@ -68,14 +68,17 @@ impl Config {
 				.place_config_file("config.config").unwrap()
 		};
 
-		let mut file    = File::open(path).unwrap();
-		let mut content = String::new();
-		file.read_to_string(&mut content).unwrap();
+		let table = if let Ok(mut file) = File::open(path) {
+			let mut content = String::new();
+			file.read_to_string(&mut content).unwrap();
 
-		let table = toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?;
+			toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?
+		}
+		else {
+			toml::Table::new()
+		};
 
 		Ok(Config {
-
 			timer: {
 				let mut config = Timer::default();
 
