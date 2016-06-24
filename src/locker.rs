@@ -156,6 +156,11 @@ impl Locker {
 			let (sender, i_receiver) = channel();
 			let (i_sender, receiver) = channel();
 
+			// FIXME(meh): The whole `XPending` check and sleeping for 100ms to then
+			//             `try_recv` on the channels is very fragile.
+			//
+			//             Find a better way to do it that plays well with Xlib's
+			//             threading model (yeah, right).
 			{
 				let display = display.clone();
 
@@ -164,8 +169,6 @@ impl Locker {
 
 					loop {
 						// Check if there are any control messages.
-						//
-						// FIXME(meh): Find a better way for this.
 						if let Ok(message) = receiver.try_recv() {
 							match message {
 								Request::Sanitize => {
@@ -214,9 +217,7 @@ impl Locker {
 							continue;
 						}
 
-						// Check if there are any control messages from savers.
-						//
-						// FIXME(meh): find a better way to do this.
+						// Check if there are any messages from savers.
 						{
 							let mut stopped = Vec::new();
 
@@ -234,9 +235,17 @@ impl Locker {
 										saver::Response::Started => {
 											let window = windows.get(&id).unwrap();
 
-	//										xlib::XGrabKeyboard(display.id, window.root, 1, xlib::GrabModeAsync, xlib::GrabModeAsync, 0);
 											xlib::XMapRaised(window.display.id, window.id);
-											xlib::XSetInputFocus(window.display.id, window.id, xlib::RevertToParent, xlib::CurrentTime);
+											xlib::XSync(window.display.id, xlib::False);
+											xlib::XSetInputFocus(window.display.id, window.id, xlib::RevertToPointerRoot, xlib::CurrentTime);
+
+											xlib::XGrabKeyboard(display.id, window.root, xlib::True,
+												xlib::GrabModeAsync, xlib::GrabModeAsync, xlib::CurrentTime);
+
+											xlib::XGrabPointer(display.id, window.root, xlib::False,
+												(xlib::ButtonPressMask | xlib::ButtonReleaseMask | xlib::PointerMotionMask) as c_uint,
+												xlib::GrabModeAsync, xlib::GrabModeAsync, 0, xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(display.id)),
+												xlib::CurrentTime);
 										}
 
 										saver::Response::Stopped => {
@@ -253,13 +262,14 @@ impl Locker {
 								let window = windows.get(id).unwrap();
 
 								xlib::XUnmapWindow(window.display.id, window.id);
+								xlib::XUngrabKeyboard(window.display.id, xlib::CurrentTime);
+								xlib::XUngrabPointer(window.display.id, xlib::CurrentTime);
+
 								savers.remove(id);
 							}
 						}
 
 						// Check if there are any pending events.
-						//
-						// FIXME(meh): Find a better way for this.
 						if xlib::XPending(display.id) == 0 {
 							thread::sleep(Duration::from_millis(100));
 							continue;
