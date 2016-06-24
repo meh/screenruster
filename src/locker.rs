@@ -84,7 +84,7 @@ impl Locker {
 				let root   = xlib::XRootWindow(display.id, screen);
 				let width  = xlib::XDisplayWidth(display.id, screen) as c_uint;
 				let height = xlib::XDisplayHeight(display.id, screen) as c_uint;
-				let black  = xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(display.id));
+				let black  = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(display.id, screen));
 
 				let info = glx::glXChooseVisual(display.id, screen,
 					[glx::GLX_RGBA, glx::GLX_DEPTH_SIZE, 24, glx::GLX_DOUBLEBUFFER, 0].as_ptr() as *mut _)
@@ -175,21 +175,27 @@ impl Locker {
 
 								}
 
+								// FIXME(meh): this could be way better designed, but it's good
+								//             enough for now.
 								Request::Start => {
 									for window in windows.values() {
-										let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
+										let mut has_saver = false;
 
-										if let Ok(saver) = Saver::spawn(name) {
-											saver.config(config.saver(name)).unwrap();
-											saver.target(CStr::from_ptr(xlib::XDisplayString(display.id)).to_str().unwrap(),
-												window.screen, window.id).unwrap();
+										if !config.savers().is_empty() {
+											let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
 
-											savers.insert(window.id, saver);
+											if let Ok(saver) = Saver::spawn(name) {
+												saver.config(config.saver(name)).unwrap();
+												saver.target(CStr::from_ptr(xlib::XDisplayString(display.id)).to_str().unwrap(),
+													window.screen, window.id).unwrap();
+
+												savers.insert(window.id, saver);
+												has_saver = true;
+											}
 										}
-										else {
-											// TODO(meh): blank the window
 
-											xlib::XMapRaised(window.display.id, window.id);
+										if !has_saver {
+											lock(window, true)
 										}
 									}
 								}
@@ -208,7 +214,7 @@ impl Locker {
 											saver.stop().unwrap();
 										}
 										else {
-											xlib::XUnmapWindow(window.display.id, window.id);
+											unlock(window);
 										}
 									}
 								}
@@ -233,19 +239,7 @@ impl Locker {
 										}
 
 										saver::Response::Started => {
-											let window = windows.get(&id).unwrap();
-
-											xlib::XMapRaised(window.display.id, window.id);
-											xlib::XSync(window.display.id, xlib::False);
-											xlib::XSetInputFocus(window.display.id, window.id, xlib::RevertToPointerRoot, xlib::CurrentTime);
-
-											xlib::XGrabKeyboard(display.id, window.root, xlib::True,
-												xlib::GrabModeAsync, xlib::GrabModeAsync, xlib::CurrentTime);
-
-											xlib::XGrabPointer(display.id, window.root, xlib::False,
-												(xlib::ButtonPressMask | xlib::ButtonReleaseMask | xlib::PointerMotionMask) as c_uint,
-												xlib::GrabModeAsync, xlib::GrabModeAsync, 0, xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(display.id)),
-												xlib::CurrentTime);
+											lock(windows.get(&id).unwrap(), false)
 										}
 
 										saver::Response::Stopped => {
@@ -259,11 +253,7 @@ impl Locker {
 							}
 
 							for id in &stopped {
-								let window = windows.get(id).unwrap();
-
-								xlib::XUnmapWindow(window.display.id, window.id);
-								xlib::XUngrabKeyboard(window.display.id, xlib::CurrentTime);
-								xlib::XUngrabPointer(window.display.id, xlib::CurrentTime);
+								unlock(windows.get(id).unwrap());
 
 								savers.remove(id);
 							}
@@ -343,6 +333,35 @@ impl Locker {
 	pub fn blank(&self) {
 		self.sender.send(Request::Blank).unwrap();
 	}
+}
+
+unsafe fn lock(window: &Window, blank: bool) {
+	xlib::XMapRaised(window.display.id, window.id);
+	xlib::XSync(window.display.id, xlib::False);
+	xlib::XSetInputFocus(window.display.id, window.id, xlib::RevertToPointerRoot, xlib::CurrentTime);
+
+	xlib::XGrabKeyboard(window.display.id, window.root, xlib::True,
+		xlib::GrabModeAsync, xlib::GrabModeAsync, xlib::CurrentTime);
+
+	xlib::XGrabPointer(window.display.id, window.root, xlib::False,
+		(xlib::ButtonPressMask | xlib::ButtonReleaseMask | xlib::PointerMotionMask) as c_uint,
+		xlib::GrabModeAsync, xlib::GrabModeAsync, 0,
+		xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(window.display.id)),
+		xlib::CurrentTime);
+
+	if blank {
+		let gc    = xlib::XCreateGC(window.display.id, window.id, 0, ptr::null_mut());
+		let black = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(window.display.id, window.screen));
+
+		xlib::XSetForeground(window.display.id, gc, black);
+		xlib::XFillRectangle(window.display.id, window.id, gc, 0, 0, window.width, window.height);
+	}
+}
+
+unsafe fn unlock(window: &Window) {
+	xlib::XUnmapWindow(window.display.id, window.id);
+	xlib::XUngrabKeyboard(window.display.id, xlib::CurrentTime);
+	xlib::XUngrabPointer(window.display.id, xlib::CurrentTime);
 }
 
 impl AsRef<Receiver<Response>> for Locker {
