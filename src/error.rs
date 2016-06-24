@@ -2,7 +2,7 @@ use std::fmt;
 use std::error;
 use std::io;
 
-use api;
+#[cfg(feature = "dbus")]
 use dbus;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -10,22 +10,20 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
 	Io(io::Error),
-	ContextCreation(api::gl::GliumCreationError<Window>),
-	SwapBuffers(api::gl::SwapBuffersError),
+	Locker(Locker),
+
+	#[cfg(feature = "dbus")]
 	DBus(dbus::Error),
+
 	Parse,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Window {
+pub enum Locker {
 	NoDisplay,
 	NoVisual,
-	NoContext,
 	NoIM,
 	NoIC,
-
-	AlreadyPresent,
-	MissingExtension,
 }
 
 impl From<io::Error> for Error {
@@ -34,24 +32,13 @@ impl From<io::Error> for Error {
 	}
 }
 
-impl From<Window> for Error {
-	fn from(value: Window) -> Self {
-		Error::ContextCreation(api::gl::GliumCreationError::BackendCreationError(value))
+impl From<Locker> for Error {
+	fn from(value: Locker) -> Self {
+		Error::Locker(value)
 	}
 }
 
-impl From<api::gl::GliumCreationError<Window>> for Error {
-	fn from(value: api::gl::GliumCreationError<Window>) -> Self {
-		Error::ContextCreation(value)
-	}
-}
-
-impl From<api::gl::SwapBuffersError> for Error {
-	fn from(value: api::gl::SwapBuffersError) -> Self {
-		Error::SwapBuffers(value)
-	}
-}
-
+#[cfg(feature = "dbus")]
 impl From<dbus::Error> for Error {
 	fn from(value: dbus::Error) -> Self {
 		Error::DBus(value)
@@ -70,14 +57,23 @@ impl error::Error for Error {
 			&Error::Io(ref err) =>
 				err.description(),
 
-			&Error::ContextCreation(ref err) =>
-				"OpenGL error.",
-
-			&Error::SwapBuffers(ref err) =>
-				err.description(),
-
+			#[cfg(feature = "dbus")]
 			&Error::DBus(ref err) =>
 				err.description(),
+
+			&Error::Locker(ref err) => match err {
+				&Locker::NoDisplay =>
+					"No display found.",
+
+				&Locker::NoVisual =>
+					"No proper visual found.",
+
+				&Locker::NoIM =>
+					"No proper IM found.",
+
+				&Locker::NoIC =>
+					"No proper IC found",
+			},
 
 			&Error::Parse =>
 				"Parse error.",

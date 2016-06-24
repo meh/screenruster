@@ -15,28 +15,20 @@ env_logger = "0.3"
 
 clap  = "2"
 xdg   = "2"
+toml  = "0.1"
+rand  = "0.3"
 
-libc  = "0.2"
-dbus  = "0.3"
+libc = "0.2"
+x11  = { version = "2", features = ["xlib", "glx"] }
 
-[dependencies.api]
-path = "saver/api"
+screenruster-saver = { path = "../saver" }
 
-[dependencies.x11]
-#version  = "2"
-git      = "https://github.com/meh/x11-rs"
-branch   = "xss"
-features = ["glx", "xlib"]
+[dependencies.dbus]
+version  = "0.3"
+optional = true
 
 [features]
-default = ["auth-internal", "saver-laughing-man"]
+default = ["auth-internal"]
 
 # authorization methods
 auth-internal = []
-
-# screen saver dependencies
-saver-laughing-man = ["laughing_man"]
-
-[dependencies.laughing_man]
-optional = true
-path     = "saver/laughing_man"

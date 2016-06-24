@@ -1,9 +1,8 @@
 use std::fs::File;
-use std::io::{self, Read};
-use std::path::PathBuf;
+use std::io::Read;
 use std::collections::HashMap;
 
-use api::config;
+use toml;
 use clap::ArgMatches;
 use xdg;
 
@@ -13,7 +12,7 @@ use error;
 pub struct Config {
 	timer:  Timer,
 	server: Server,
-	window: Window,
+	locker: Locker,
 	auth:   Auth,
 	saver:  Saver,
 }
@@ -43,20 +42,20 @@ pub struct Server {
 }
 
 #[derive(Clone, Debug)]
-pub struct Window {
+pub struct Locker {
 
 }
 
 #[derive(Clone, Default, Debug)]
 pub struct Auth {
 	using: Vec<String>,
-	table: HashMap<String, config::Table>,
+	table: HashMap<String, toml::Table>,
 }
 
 #[derive(Clone, Default, Debug)]
 pub struct Saver {
 	using: Vec<String>,
-	table: HashMap<String, config::Table>,
+	table: HashMap<String, toml::Table>,
 }
 
 impl Config {
@@ -73,7 +72,7 @@ impl Config {
 		let mut content = String::new();
 		file.read_to_string(&mut content).unwrap();
 
-		let table = config::Parser::new(&content).parse().ok_or(error::Error::Parse)?;
+		let table = toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?;
 
 		Ok(Config {
 
@@ -105,8 +104,8 @@ impl Config {
 				Server { }
 			},
 
-			window: {
-				Window { }
+			locker: {
+				Locker { }
 			},
 
 			auth: {
@@ -153,25 +152,33 @@ impl Config {
 		self.server.clone()
 	}
 
-	pub fn window(&self) -> Window {
-		self.window.clone()
+	pub fn locker(&self) -> Locker {
+		self.locker.clone()
 	}
 
-	pub fn auth<S: AsRef<str>>(&self, name: S) -> config::Table {
+	pub fn auth<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		if let Some(conf) = self.auth.table.get(name.as_ref()) {
 			conf.clone()
 		}
 		else {
-			config::Table::new()
+			toml::Table::new()
 		}
 	}
 
-	pub fn saver<S: AsRef<str>>(&self, name: S) -> config::Table {
+	pub fn auths(&self) -> &[String] {
+		&self.auth.using[..]
+	}
+
+	pub fn saver<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		if let Some(conf) = self.saver.table.get(name.as_ref()) {
 			conf.clone()
 		}
 		else {
-			config::Table::new()
+			toml::Table::new()
 		}
+	}
+
+	pub fn savers(&self) -> &[String] {
+		&self.saver.using[..]
 	}
 }

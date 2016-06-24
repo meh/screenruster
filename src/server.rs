@@ -1,6 +1,7 @@
 use std::thread;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
+#[cfg(feature = "dbus")]
 use dbus;
 
 use error;
@@ -19,7 +20,6 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Response {
 	Error(error::Error),
-	Method(dbus::Message),
 }
 
 impl Server {
@@ -27,6 +27,7 @@ impl Server {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 
+		#[cfg(feature = "dbus")]
 		thread::spawn(move || {
 			let connection = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
 			connection.register_name("meh.screen.saver", 0).unwrap();
@@ -41,6 +42,16 @@ impl Server {
 						info!("dbus: {:?}", other);
 					}
 				}
+			}
+		});
+
+		#[cfg(not(feature = "dbus"))]
+		thread::spawn(move || {
+			let sender   = sender;
+			let receiver = receiver;
+
+			loop {
+				thread::sleep(::std::time::Duration::from_secs(3600));
 			}
 		});
 

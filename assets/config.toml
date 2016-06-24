@@ -19,6 +19,6 @@ max   = 1.2
 step  = 0.00001
 count = 4
 
-[saver.laughing_man.image]
+[saver.laughing_man.man]
 rotate = 0.000005
 scale  = 400.0

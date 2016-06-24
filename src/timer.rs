@@ -12,9 +12,8 @@ pub struct Timer {
 
 #[derive(Clone, Debug)]
 pub enum Request {
-	Activity,
-	Started,
-	Stopped,
+	Reset,
+	Restart,
 }
 
 #[derive(Clone, Debug)]
@@ -49,21 +48,14 @@ impl Timer {
 
 				while let Ok(request) = receiver.try_recv() {
 					match request {
-						Request::Activity => {
+						Request::Reset => {
 							// If the saver has not started refresh the idle time.
 							if started.is_none() {
 								idle = Instant::now();
 							}
 						}
 
-						Request::Started => {
-							// If the saver wasn't started already enable the guards.
-							if started.is_none() {
-								started = Some(Instant::now());
-							}
-						}
-
-						Request::Stopped => {
+						Request::Restart => {
 							// If the saver was started reset guards to initial state.
 							if started.is_some() {
 								idle    = Instant::now();
@@ -98,6 +90,7 @@ impl Timer {
 					// If the system has been idle long enough send the message.
 					if idle.elapsed().as_secs() >= config.timeout as u64 {
 						sender.send(Response::Start).unwrap();
+						started = Some(Instant::now());
 					}
 				}
 			}
@@ -109,16 +102,12 @@ impl Timer {
 		})
 	}
 
-	pub fn activity(&self) {
-		self.sender.send(Request::Activity).unwrap();
+	pub fn reset(&self) {
+		self.sender.send(Request::Reset).unwrap();
 	}
 
-	pub fn started(&self) {
-		self.sender.send(Request::Started).unwrap();
-	}
-
-	pub fn stopped(&self) {
-		self.sender.send(Request::Stopped).unwrap();
+	pub fn restart(&self) {
+		self.sender.send(Request::Restart).unwrap();
 	}
 }
 
@@ -133,4 +122,3 @@ impl AsRef<Sender<Request>> for Timer {
 		&self.sender
 	}
 }
-
