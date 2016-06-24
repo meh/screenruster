@@ -38,8 +38,6 @@ impl Saver {
 					}
 
 					if let Ok(message) = json::parse(&line.unwrap()) {
-						debug!("incoming: {:?}", message);
-
 						sender.send(match json!(message["type"].as_str()) {
 							"initialized" => {
 								Response::Initialized
@@ -72,8 +70,6 @@ impl Saver {
 					if request.is_none() {
 						break;
 					}
-
-					debug!("outgoing: {:?}", request);
 
 					output.write_all(json::stringify(match request.unwrap() {
 						Request::Target { display, screen, window } => object!{
@@ -186,8 +182,6 @@ impl Saver {
 					json::JsonValue::Object(value.iter().map(|(k, v)| (k.clone(), convert(v))).collect()),
 			}
 		}
-
-		debug!("{:?}", json::stringify(object!{ "foo" => 0.0001 }));
 
 		self.send(Request::Config(convert(&toml::Value::Table(config))))
 	}
