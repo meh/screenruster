@@ -21,7 +21,7 @@ rand  = "0.3"
 libc = "0.2"
 x11  = { version = "2", features = ["xlib", "glx"] }
 
-screenruster-saver = { path = "../saver" }
+screenruster-saver = { git = "https://github.com/meh/screenruster-saver" }
 
 [dependencies.dbus]
 version  = "0.3"
