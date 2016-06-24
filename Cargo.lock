@@ -393,12 +393,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "screenruster-saver"
 version = "0.1.0"
-source = "git+https://github.com/meh/screenruster-saver#c03d6df5d80c0a9e38f0002ca6b8945e39ae80ff"
+source = "git+https://github.com/meh/screenruster-saver#a5addcc249e48c10fbcdc47851f321014c990806"
 dependencies = [
+ "env_logger 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "glium 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "image 0.10.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "json 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "x11 2.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
