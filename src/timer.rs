@@ -43,6 +43,9 @@ impl Timer {
 			// Optional instant to check when the screen was locked.
 			let mut locked = None: Option<Instant>;
 
+			// Optional instant to check when the screen was blanked.
+			let mut blanked = None: Option<Instant>;
+
 			loop {
 				thread::sleep(Duration::from_secs(1));
 
@@ -61,6 +64,7 @@ impl Timer {
 								idle    = Instant::now();
 								started = None;
 								locked  = None;
+								blanked = None;
 							}
 						}
 					}
@@ -82,6 +86,18 @@ impl Timer {
 							if start.elapsed().as_secs() >= after as u64 {
 								locked = Some(Instant::now());
 								sender.send(Response::Lock).unwrap();
+							}
+						}
+					}
+
+					// If the screen is not blanked.
+					if blanked.is_none() {
+						// If blanking is enabled.
+						if let Some(after) = config.blank {
+							// If it's time to blank, send th emessage and enable the blank guard.
+							if start.elapsed().as_secs() >= after as u64 {
+								blanked = Some(Instant::now());
+								sender.send(Response::Blank).unwrap();
 							}
 						}
 					}
