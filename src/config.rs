@@ -43,7 +43,17 @@ pub struct Server {
 
 #[derive(Clone, Debug)]
 pub struct Locker {
+	display: Option<String>,
+	dpms:    bool,
+}
 
+impl Default for Locker {
+	fn default() -> Locker {
+		Locker {
+			display: None,
+			dpms:    true,
+		}
+	}
 }
 
 #[derive(Clone, Default, Debug)]
@@ -108,7 +118,19 @@ impl Config {
 			},
 
 			locker: {
-				Locker { }
+				let mut config = Locker::default();
+
+				if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
+					if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
+						config.display = Some(value.into());
+					}
+
+					if let Some(false) = table.get("dpms").and_then(|v| v.as_bool()) {
+						config.dpms = false;
+					}
+				}
+
+				config
 			},
 
 			auth: {
