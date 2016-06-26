@@ -72,6 +72,11 @@ impl Saver {
 					}
 
 					output.write_all(json::stringify(match request.unwrap() {
+						Request::Config(config) => object!{
+							"type"   => "config",
+							"config" => config
+						},
+
 						Request::Target { display, screen, window } => object!{
 							"type"    => "target",
 							"display" => display,
@@ -79,9 +84,10 @@ impl Saver {
 							"window"  => window
 						},
 
-						Request::Config(config) => object!{
-							"type"   => "config",
-							"config" => config
+						Request::Resize { width, height } => object!{
+							"type"   => "resize",
+							"width"  => width,
+							"height" => height
 						},
 
 						Request::Dialog(active) => object!{
@@ -117,7 +123,7 @@ impl Saver {
 
 		// Logger.
 		{
-			let mut input = child.stderr.take().unwrap();
+			let input = child.stderr.take().unwrap();
 
 			thread::spawn(move || {
 				for line in BufReader::new(input).lines() {
@@ -159,26 +165,23 @@ impl Saver {
 	/// Configure the saver.
 	pub fn config(&self, config: toml::Table) -> Result<(), SendError<Option<Request>>> {
 		fn convert(value: &toml::Value) -> json::JsonValue {
-			match value {
-				&toml::Value::String(ref value) =>
+			match *value {
+				toml::Value::String(ref value) | toml::Value::Datetime(ref value) =>
 					value.clone().into(),
 
-				&toml::Value::Integer(value) =>
+				toml::Value::Integer(value) =>
 					value.into(),
 
-				&toml::Value::Float(value) =>
+				toml::Value::Float(value) =>
 					value.into(),
 
-				&toml::Value::Boolean(value) =>
+				toml::Value::Boolean(value) =>
 					value.into(),
 
-				&toml::Value::Datetime(ref value) =>
-					value.clone().into(),
-
-				&toml::Value::Array(ref value) =>
+				toml::Value::Array(ref value) =>
 					json::JsonValue::Array(value.iter().map(|v| convert(v)).collect()),
 
-				&toml::Value::Table(ref value) =>
+				toml::Value::Table(ref value) =>
 					json::JsonValue::Object(value.iter().map(|(k, v)| (k.clone(), convert(v))).collect()),
 			}
 		}
