@@ -38,7 +38,6 @@ mod locker;
 use locker::Locker;
 
 mod saver;
-use saver::Saver;
 
 fn main() {
 	env_logger::init().unwrap();
@@ -133,6 +132,4 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			}
 		}
 	}
-
-	Ok(())
 }
