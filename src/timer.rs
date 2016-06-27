@@ -12,8 +12,14 @@ pub struct Timer {
 
 #[derive(Clone, Debug)]
 pub enum Request {
-	Reset,
+	Reset(Event),
 	Restart,
+}
+
+#[derive(Clone, Debug)]
+pub enum Event {
+	Idle,
+	Blank,
 }
 
 #[derive(Clone, Debug)]
@@ -37,24 +43,34 @@ impl Timer {
 			// Instant to check last activity time.
 			let mut idle = Instant::now();
 
-			// Optional instant to check when the screen saver starter.
+			// Instant to check when the screen saver starter.
 			let mut started = None: Option<Instant>;
 
-			// Optional instant to check when the screen was locked.
+			// Instant to check when the screen was locked.
 			let mut locked = None: Option<Instant>;
 
-			// Optional instant to check when the screen was blanked.
+			// Instant to check when the screen was blanked.
 			let mut blanked = None: Option<Instant>;
+
+			// Instant to check when the screen was unblanked.
+			let mut unblanked = None: Option<Instant>;
 
 			loop {
 				thread::sleep(Duration::from_secs(1));
 
 				while let Ok(request) = receiver.try_recv() {
 					match request {
-						Request::Reset => {
+						Request::Reset(Event::Idle) => {
 							// If the saver has not started refresh the idle time.
 							if started.is_none() {
 								idle = Instant::now();
+							}
+						}
+
+						Request::Reset(Event::Blank) => {
+							if started.is_some() {
+								blanked   = None;
+								unblanked = Some(Instant::now());
 							}
 						}
 
@@ -95,7 +111,7 @@ impl Timer {
 						// If blanking is enabled.
 						if let Some(after) = config.blank {
 							// If it's time to blank, send th emessage and enable the blank guard.
-							if start.elapsed().as_secs() >= after as u64 {
+							if unblanked.unwrap_or(start).elapsed().as_secs() >= after as u64 {
 								blanked = Some(Instant::now());
 								sender.send(Response::Blank).unwrap();
 							}
@@ -118,8 +134,8 @@ impl Timer {
 		})
 	}
 
-	pub fn reset(&self) {
-		self.sender.send(Request::Reset).unwrap();
+	pub fn reset(&self, event: Event) {
+		self.sender.send(Request::Reset(event)).unwrap();
 	}
 
 	pub fn restart(&self) {

@@ -42,7 +42,7 @@ pub enum Request {
 
 	Start,
 	Lock,
-	Blank,
+	Power(bool),
 	Stop,
 }
 
@@ -124,8 +124,8 @@ impl Locker {
 
 								}
 
-								Request::Blank => {
-
+								Request::Power(value) => {
+									display.power(value);
 								}
 
 								Request::Stop => {
@@ -269,8 +269,8 @@ impl Locker {
 		self.sender.send(Request::Stop).unwrap();
 	}
 
-	pub fn blank(&self) {
-		self.sender.send(Request::Blank).unwrap();
+	pub fn power(&self, value: bool) {
+		self.sender.send(Request::Power(value)).unwrap();
 	}
 }
 

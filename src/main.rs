@@ -100,7 +100,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					timer::Response::Blank => {
-						locker.blank();
+						locker.power(false);
 					}
 				}
 			},
@@ -118,15 +118,18 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 				match event {
 					locker::Response::Keyboard(key) => {
+						timer.reset(timer::Event::Blank);
+						locker.power(true);
+
 						if let locker::Keyboard::Char('q') = key {
 							locker.stop();
-//							timer.restart();
+							//timer.restart();
 						}
 					}
 
 					// Reset idle timer.
 					locker::Response::Activity => {
-						timer.reset();
+						timer.reset(timer::Event::Idle);
 					}
 				}
 			}
