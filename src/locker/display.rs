@@ -110,7 +110,7 @@ impl Display {
 
 	/// Turn the monitor on or off.
 	pub fn power(&self, value: bool) {
-		if self.dpms.is_none() {
+		if self.dpms.is_none() || self.is_powered() == value {
 			return;
 		}
 
