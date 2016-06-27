@@ -8,7 +8,7 @@ use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::sync::Arc;
 
 use rand::{self, Rng};
-use x11::{xlib, keysym, xrandr, dpms};
+use x11::{xlib, keysym, xrandr};
 use libc::{c_int, c_ulong};
 
 use error;
