@@ -156,15 +156,10 @@ impl Window {
 		let mut result = Ok(());
 
 		for _ in 0 .. tries {
-			match self.grab(grab) {
-				Ok(..) => {
-					result = Ok(());
-					break;
-				}
+			result = self.grab(grab);
 
-				Err(err) => {
-					result = Err(err);
-				}
+			if result.is_ok() {
+				break;
 			}
 
 			thread::sleep(Duration::from_millis(1));
@@ -176,32 +171,38 @@ impl Window {
 	/// Lock the window.
 	pub fn lock(&self) -> error::Result<()> {
 		unsafe {
-			// We first try to grab the keyboard, without erroring.
-			let grabbed = self.try_grab(Grab::Keyboard, 500).is_ok();
-
-			// We try to grab the pointer, but it's non-fatal.
-			//
-			// TODO(meh): Consider if error in grabbing pointer should be fatal.
-			if let Err(err) = self.try_grab(Grab::Pointer, 1000) {
-				warn!("could not grab pointer: {:?}", err);
-			}
+			// Try to grab the keyboard and mouse.
+			let keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
+			let pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
 
 			// Map the window and make sure it's mapped.
 			xlib::XMapRaised(self.display.id, self.id);
 			xlib::XSync(self.display.id, xlib::False);
 
-			// Some retarded X11 applications grab the keyboard for long period of times for no reason,
-			// so try to change focus and grab again.
-			if !grabbed {
-				warn!("could not grab keyboard, trying to change focus");
+			// Some retarded X11 applications grab the keyboard and pointer for long
+			// period of times for no reason, so try to change focus and grab again.
+			if !keyboard || !pointer {
+				warn!("could not grab keyboard or pointer, trying to change focus");
 
 				xlib::XSetInputFocus(self.display.id, self.root, xlib::RevertToPointerRoot, xlib::CurrentTime);
 				xlib::XSync(self.display.id, xlib::False);
 
-				// If grab fails unmap the window and return the fatal error.
-				if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
-					xlib::XUnmapWindow(self.display.id, self.id);
-					return Err(err);
+				// Failing to grab the keyboard is fatal since the window manager or
+				// other applications may be stealing our thunder.
+				if !keyboard {
+					if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
+						xlib::XUnmapWindow(self.display.id, self.id);
+
+						error!("coult not grab keyboard: {:?}", err);
+						return Err(err);
+					}
+				}
+
+				// TODO(meh): Consider if failing to grab pointer should be fatal.
+				if !pointer {
+					if let Err(err) = self.try_grab(Grab::Pointer, 500) {
+						warn!("could not grab pointer: {:?}", err);
+					}
 				}
 			}
 
