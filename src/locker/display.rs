@@ -7,6 +7,7 @@ use x11::{xlib, xrandr, dpms, xmd};
 
 use error;
 use config;
+use util;
 
 #[derive(Debug)]
 pub struct Display {
@@ -25,7 +26,12 @@ impl Display {
 	/// Open the default display.
 	pub fn open(config: config::Locker) -> error::Result<Arc<Display>> {
 		unsafe {
-			let id = xlib::XOpenDisplay(ptr::null()).as_mut().ok_or(error::Locker::Display)?;
+			let id = if let Some(name) = config.display.as_ref() {
+				util::with(name, |name| xlib::XOpenDisplay(name))
+			}
+			else {
+				xlib::XOpenDisplay(ptr::null())
+			}.as_mut().ok_or(error::Locker::Display)?;
 
 			Ok(Arc::new(Display {
 				id: id,
@@ -46,7 +52,8 @@ impl Display {
 					let mut event = 0;
 					let mut error = 0;
 
-					if dpms::DPMSQueryExtension(id, &mut event, &mut error) == xlib::True &&
+					if config.dpms &&
+					   dpms::DPMSQueryExtension(id, &mut event, &mut error) == xlib::True &&
 					   dpms::DPMSCapable(id) == xlib::True
 					{
 						// DPMS needs to be enabled for `DPMSForceLevel` to actually work,

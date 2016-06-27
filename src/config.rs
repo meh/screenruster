@@ -43,8 +43,8 @@ pub struct Server {
 
 #[derive(Clone, Debug)]
 pub struct Locker {
-	display: Option<String>,
-	dpms:    bool,
+	pub display: Option<String>,
+	pub dpms:    bool,
 }
 
 impl Default for Locker {
