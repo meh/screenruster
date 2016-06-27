@@ -14,6 +14,7 @@ pub struct Timer {
 pub enum Request {
 	Reset(Event),
 	Restart,
+	Report,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,15 @@ pub enum Response {
 	Start,
 	Lock,
 	Blank,
+
+	Report {
+		beat:      Instant,
+		idle:      Instant,
+		started:   Option<Instant>,
+		locked:    Option<Instant>,
+		blanked:   Option<Instant>,
+		unblanked: Option<Instant>,
+	}
 }
 
 impl Timer {
@@ -82,6 +92,17 @@ impl Timer {
 								locked  = None;
 								blanked = None;
 							}
+						}
+
+						Request::Report => {
+							sender.send(Response::Report {
+								beat:      beat,
+								idle:      idle,
+								started:   started,
+								locked:    locked,
+								blanked:   blanked,
+								unblanked: unblanked,
+							}).unwrap();
 						}
 					}
 				}

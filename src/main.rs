@@ -85,6 +85,8 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 				let event = event.unwrap();
 
 				match event {
+					timer::Response::Report { .. } => (),
+
 					// On heartbeat sanitize the windows from all the bad things that can
 					// happen with X11.
 					timer::Response::Heartbeat => {
