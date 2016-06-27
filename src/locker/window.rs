@@ -5,7 +5,7 @@ use std::thread;
 use std::sync::Arc;
 
 use libc::{c_int, c_uint};
-use x11::{xlib, glx, xrandr, dpms};
+use x11::{xlib, glx, xrandr};
 
 use error;
 use util;
