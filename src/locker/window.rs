@@ -131,6 +131,10 @@ impl Window {
 					self.pointer = true;
 				}
 			}
+
+			// Remap the window in case stuff like popups went above the locker.
+			xlib::XMapRaised(self.display.id, self.id);
+			xlib::XSync(self.display.id, xlib::False);
 		}
 
 		// TODO(meh): Actually sanitize.
@@ -223,7 +227,8 @@ impl Window {
 					}
 				}
 
-				// TODO(meh): Consider if failing to grab pointer should be fatal.
+				// TODO(meh): Consider if failing to grab pointer should be fatal,
+				//            probably not.
 				if !self.pointer {
 					if let Err(err) = self.try_grab(Grab::Pointer, 500) {
 						warn!("could not grab pointer: {:?}", err);
