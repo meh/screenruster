@@ -23,6 +23,10 @@ pub struct Window {
 	pub cursor:  xlib::Cursor,
 	pub im:      xlib::XIM,
 	pub ic:      xlib::XIC,
+
+	pub locked:   bool,
+	pub keyboard: bool,
+	pub pointer:  bool,
 }
 
 unsafe impl Send for Window { }
@@ -110,12 +114,30 @@ impl Window {
 				cursor:  cursor,
 				im:      im,
 				ic:      ic,
+
+				locked:   false,
+				keyboard: false,
+				pointer:  false,
 			})
 		}
 	}
 
+	/// Sanitize the window.
+	pub fn sanitize(&mut self) {
+		if self.locked {
+			// Try to grab the pointer again in case it wasn't grabbed when locking.
+			if !self.pointer {
+				if self.grab(Grab::Pointer).is_ok() {
+					self.pointer = true;
+				}
+			}
+		}
+
+		// TODO(meh): Actually sanitize.
+	}
+
 	/// Grab the given entity.
-	pub fn grab(&self, grab: Grab) -> error::Result<()> {
+	fn grab(&self, grab: Grab) -> error::Result<()> {
 		unsafe {
 			let result = match grab {
 				Grab::Keyboard => {
@@ -152,7 +174,7 @@ impl Window {
 	}
 
 	/// Try to grab the given entity with 1ms pauses.
-	pub fn try_grab(&self, grab: Grab, tries: usize) -> error::Result<()> {
+	fn try_grab(&self, grab: Grab, tries: usize) -> error::Result<()> {
 		let mut result = Ok(());
 
 		for _ in 0 .. tries {
@@ -169,11 +191,11 @@ impl Window {
 	}
 
 	/// Lock the window.
-	pub fn lock(&self) -> error::Result<()> {
+	pub fn lock(&mut self) -> error::Result<()> {
 		unsafe {
 			// Try to grab the keyboard and mouse.
-			let keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
-			let pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
+			self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
+			self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
 
 			// Map the window and make sure it's mapped.
 			xlib::XMapRaised(self.display.id, self.id);
@@ -181,7 +203,7 @@ impl Window {
 
 			// Some retarded X11 applications grab the keyboard and pointer for long
 			// period of times for no reason, so try to change focus and grab again.
-			if !keyboard || !pointer {
+			if !self.keyboard || !self.pointer {
 				warn!("could not grab keyboard or pointer, trying to change focus");
 
 				xlib::XSetInputFocus(self.display.id, self.root, xlib::RevertToPointerRoot, xlib::CurrentTime);
@@ -189,19 +211,25 @@ impl Window {
 
 				// Failing to grab the keyboard is fatal since the window manager or
 				// other applications may be stealing our thunder.
-				if !keyboard {
+				if !self.keyboard {
 					if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
 						xlib::XUnmapWindow(self.display.id, self.id);
 
 						error!("coult not grab keyboard: {:?}", err);
 						return Err(err);
 					}
+					else {
+						self.keyboard = true;
+					}
 				}
 
 				// TODO(meh): Consider if failing to grab pointer should be fatal.
-				if !pointer {
+				if !self.pointer {
 					if let Err(err) = self.try_grab(Grab::Pointer, 500) {
 						warn!("could not grab pointer: {:?}", err);
+					}
+					else {
+						self.pointer = true;
 					}
 				}
 			}
@@ -214,12 +242,14 @@ impl Window {
 				xrandr::XRRSelectInput(self.display.id, self.id, xrandr::RRScreenChangeNotifyMask);
 			}
 
+			self.locked = true;
+
 			Ok(())
 		}
 	}
 
 	/// Make the window solid black.
-	pub fn blank(&self) {
+	pub fn blank(&mut self) {
 		unsafe {
 			let gc    = xlib::XCreateGC(self.display.id, self.id, 0, ptr::null_mut());
 			let black = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(self.display.id, self.screen));
@@ -230,11 +260,16 @@ impl Window {
 	}
 
 	/// Unlock the window, hiding and ungrabbing whatever.
-	pub fn unlock(&self) {
+	pub fn unlock(&mut self) {
 		unsafe {
 			xlib::XUnmapWindow(self.display.id, self.id);
+			self.locked = false;
+
 			xlib::XUngrabKeyboard(self.display.id, xlib::CurrentTime);
+			self.keyboard = false;
+
 			xlib::XUngrabPointer(self.display.id, xlib::CurrentTime);
+			self.pointer = false;
 		}
 	}
 }

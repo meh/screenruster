@@ -96,7 +96,7 @@ impl Locker {
 								}
 
 								Request::Start => {
-									for window in windows.values() {
+									for window in windows.values_mut() {
 										let mut has_saver = false;
 
 										if !config.savers().is_empty() {
@@ -129,7 +129,7 @@ impl Locker {
 								}
 
 								Request::Stop => {
-									for window in windows.values() {
+									for window in windows.values_mut() {
 										let mut has_saver = false;
 
 										if let Some(saver) = savers.get_mut(&window.id) {
@@ -171,7 +171,7 @@ impl Locker {
 
 									Some(saver::Response::Started) => {
 										// TODO(meh): Do not crash on grab failure.
-										windows.get(&id).unwrap().lock().unwrap();
+										windows.get_mut(&id).unwrap().lock().unwrap();
 									}
 
 									Some(saver::Response::Stopped) => {
@@ -184,21 +184,21 @@ impl Locker {
 
 							// If the saver has crashed blank the window and remove it.
 							for id in &crashed {
-								windows.get(id).unwrap().blank();
+								windows.get_mut(id).unwrap().blank();
 								savers.remove(id);
 							}
 
 							// Unlock the stopped savers.
 							//
-							// TODO(meh): We might want to check if the saver was actually
-							//            requested to stop.
+							// TODO(meh): Need to check if the saver was actually requested
+							//            to stop.
 							for id in &stopped {
-								windows.get(id).unwrap().unlock();
+								windows.get_mut(id).unwrap().unlock();
 								savers.remove(id);
 							}
 						}
 
-						// Check if there are any pending events.
+						// Check if there are any pending events, or sleep 100ms.
 						if xlib::XPending(display.id) == 0 {
 							thread::sleep(Duration::from_millis(100));
 							continue;
