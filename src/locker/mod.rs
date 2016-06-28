@@ -92,7 +92,9 @@ impl Locker {
 						if let Ok(message) = receiver.try_recv() {
 							match message {
 								Request::Sanitize => {
-
+									for window in windows.values_mut() {
+										window.sanitize();
+									}
 								}
 
 								Request::Start => {
