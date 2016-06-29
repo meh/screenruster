@@ -38,8 +38,8 @@ a process is spawned.
 The configuration is monolithic and managed by the daemon in a TOML file, the
 related TOML map is converted to JSON and sent to the saver.
 
-- `type`:   `config`
-- `config`: `Object`
+- `type`   = `config`
+- `config` = `Object`
 
 ### Target
 
@@ -49,26 +49,26 @@ a process is spawned.
 It contains the details required to get the X11 window, the display name, the
 screen number and the window `XID`.
 
-- `type`:    `target`
-- `display`: `String`
-- `screen`:  `Integer`
-- `window`:  `Integer`
+- `type`    = `target`
+- `display` = `String`
+- `screen`  = `Integer`
+- `window`  = `Integer`
 
 ### Resize
 
 The resize request is sent when a locker window is resized, this can happen if
 XRandr is used to change resolution or rotate the screen.
 
-- `type`:   `resize`
-- `width`:  `Integer`
-- `height`: `Integer`
+- `type`   = `resize`
+- `width`  = `Integer`
+- `height` = `Integer`
 
 ### Dialog
 
 The dialog request is sent when the input dialog should be shown or hidden.
 
-- `type`:   `dialog`
-- `dialog`: `Boolean`
+- `type`   = `dialog`
+- `dialog` = `Boolean`
 
 ### Password
 
@@ -76,22 +76,22 @@ The password request is sent when any authorization related changes happened,
 this includes when characters are being inserted or deleted, the password is
 being checked or authorization failed or succeded.
 
-- `type`:     `password`
-- `password`: `insert | delete | reset | check | success | failure`
+- `type`     = `password`
+- `password` = `insert`, `delete`, `reset`, `check`, `success`, `failure`
 
 ### Start
 
 The start request is sent when the saver should start its rendering, this may
 include a fade in or other fancy graphics.
 
-- `type`: `start`
+- `type` = `start`
 
 ### Stop
 
 The stop request is sent when the saver should stop its rendering, this may
 include a fade out or other fancy graphics.
 
-- `type`: `stop`
+- `type` = `stop`
 
 Responses
 ---------
@@ -103,14 +103,14 @@ The initialized response is sent after the handshake is done and the saver is
 ready to start, since fancy graphics may require loading textures and such, the
 saver is given some leeway to get ready to render.
 
-- `type`: `initialized`
+- `type` = `initialized`
 
 ### Started
 
 The started response is sent after a `start` request has been received and the
 saver started its rendering, it tells the daemon it can show the window.
 
-- `type`: `started`
+- `type` = `started`
 
 ### Stopped
 
