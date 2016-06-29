@@ -47,8 +47,8 @@ impl Server {
 
 		#[cfg(not(feature = "dbus"))]
 		thread::spawn(move || {
-			let sender   = sender;
-			let receiver = receiver;
+			let _ = sender;
+			let _ = receiver;
 
 			loop {
 				thread::sleep(::std::time::Duration::from_secs(3600));
