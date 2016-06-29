@@ -124,20 +124,22 @@ impl Window {
 
 	/// Sanitize the window.
 	pub fn sanitize(&mut self) {
-		if self.locked {
-			// Try to grab the pointer again in case it wasn't grabbed when locking.
-			if !self.pointer {
-				if self.grab(Grab::Pointer).is_ok() {
-					self.pointer = true;
+		unsafe {
+			if self.locked {
+				// Try to grab the pointer again in case it wasn't grabbed when locking.
+				if !self.pointer {
+					if self.grab(Grab::Pointer).is_ok() {
+						self.pointer = true;
+					}
 				}
+
+				// Remap the window in case stuff like popups went above the locker.
+				xlib::XMapRaised(self.display.id, self.id);
+				xlib::XSync(self.display.id, xlib::False);
 			}
 
-			// Remap the window in case stuff like popups went above the locker.
-			xlib::XMapRaised(self.display.id, self.id);
-			xlib::XSync(self.display.id, xlib::False);
+			// TODO(meh): Actually sanitize.
 		}
-
-		// TODO(meh): Actually sanitize.
 	}
 
 	/// Grab the given entity.
@@ -206,7 +208,7 @@ impl Window {
 			xlib::XSync(self.display.id, xlib::False);
 
 			// Some retarded X11 applications grab the keyboard and pointer for long
-			// period of times for no reason, so try to change focus and grab again.
+			// periods of time for no reason, so try to change focus and grab again.
 			if !self.keyboard || !self.pointer {
 				warn!("could not grab keyboard or pointer, trying to change focus");
 
