@@ -82,9 +82,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 		select! {
 			// Timer events.
 			event = t.recv() => {
-				let event = event.unwrap();
-
-				match event {
+				match event.unwrap() {
 					timer::Response::Report { .. } => (),
 
 					// On heartbeat sanitize the windows from all the bad things that can
@@ -109,16 +107,16 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 			// DBus events.
 			event = s.recv() => {
-				let event = event.unwrap();
-
-				info!("server: {:?}", event);
+				match event.unwrap() {
+					event => {
+						info!("dbus: {:?}", event);
+					}
+				}
 			},
 
 			// Locker events.
 			event = l.recv() => {
-				let event = event.unwrap();
-
-				match event {
+				match event.unwrap() {
 					locker::Response::Keyboard(key) => {
 						if let locker::Keyboard::Char('q') = key {
 							locker.stop().unwrap();
