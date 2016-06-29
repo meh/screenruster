@@ -127,10 +127,8 @@ impl Window {
 		unsafe {
 			if self.locked {
 				// Try to grab the pointer again in case it wasn't grabbed when locking.
-				if !self.pointer {
-					if self.grab(Grab::Pointer).is_ok() {
-						self.pointer = true;
-					}
+				if !self.pointer && self.grab(Grab::Pointer).is_ok() {
+					self.pointer = true;
 				}
 
 				// Remap the window in case stuff like popups went above the locker.
@@ -203,7 +201,7 @@ impl Window {
 			self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
 			self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
 
-			// Map the window and make sure it's mapped.
+			// Map the window and make sure it's raised.
 			xlib::XMapRaised(self.display.id, self.id);
 			xlib::XSync(self.display.id, xlib::False);
 
