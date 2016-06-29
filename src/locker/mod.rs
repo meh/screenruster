@@ -105,11 +105,11 @@ impl Locker {
 											let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
 
 											if let Ok(saver) = Saver::spawn(name) {
-												if saver.config(config.saver(name)).is_ok() {
-													if saver.target(display.name(), window.screen, window.id).is_ok() {
-														savers.insert(window.id, saver);
-														has_saver = true;
-													}
+												if saver.config(config.saver(name)).is_ok() &&
+												   saver.target(display.name(), window.screen, window.id).is_ok()
+												{
+													savers.insert(window.id, saver);
+													has_saver = true;
 												}
 											}
 										}
@@ -207,41 +207,41 @@ impl Locker {
 						}
 
 						xlib::XNextEvent(display.id, &mut event);
-						let any = xlib::XAnyEvent::from(event);
+						let any    = xlib::XAnyEvent::from(event);
+						let window = windows.values().find(|w| w.id == any.window || w.root == any.window);
 
-						// Check if the event is from one of our windows.
-						if let Some(window) = windows.values().find(|w| w.id == any.window || w.root == any.window) {
-							match event.get_type() {
-								xlib::KeyPress | xlib::KeyRelease => {
-									let     key    = xlib::XKeyEvent::from(event);
-									let     code   = key.keycode;
-									let mut ic_sym = 0;
+						match (event.get_type(), window) {
+							// Handle keyboard input to our window.
+							(xlib::KeyPress, Some(window)) | (xlib::KeyRelease, Some(window)) => {
+								let     key    = xlib::XKeyEvent::from(event);
+								let     code   = key.keycode;
+								let mut ic_sym = 0;
 
-									let mut buffer = [0u8; 16];
-									let     count  = xlib::Xutf8LookupString(window.ic, mem::transmute(&event),
-										mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-										&mut ic_sym, ptr::null_mut());
+								let mut buffer = [0u8; 16];
+								let     count  = xlib::Xutf8LookupString(window.ic, mem::transmute(&event),
+									mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
+									&mut ic_sym, ptr::null_mut());
 
-									for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-										sender.send(Response::Keyboard(Keyboard::Char(ch))).unwrap();
-									}
-
-									let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
-
-									if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
-										sym = ic_sym;
-									}
-
-									sender.send(Response::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
+								for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+									sender.send(Response::Keyboard(Keyboard::Char(ch))).unwrap();
 								}
 
-								other => {
-									debug!("event: {}", other);
+								let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
+
+								if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
+									sym = ic_sym;
 								}
+
+								sender.send(Response::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
 							}
-						}
-						else {
-							debug!("event from external window: {}", any.type_);
+
+							(other, Some(_)) => {
+								debug!("event: {}", other);
+							}
+
+							(other, None) => {
+								debug!("event for {}: {}", any.window, other);
+							}
 						}
 					}
 				});
@@ -255,24 +255,24 @@ impl Locker {
 		}
 	}
 
-	pub fn sanitize(&self) {
-		self.sender.send(Request::Sanitize).unwrap();
+	pub fn sanitize(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Sanitize)
 	}
 
-	pub fn start(&self) {
-		self.sender.send(Request::Start).unwrap();
+	pub fn start(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Start)
 	}
 
-	pub fn lock(&self) {
-		self.sender.send(Request::Lock).unwrap();
+	pub fn lock(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Lock)
 	}
 
-	pub fn stop(&self) {
-		self.sender.send(Request::Stop).unwrap();
+	pub fn stop(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Stop)
 	}
 
-	pub fn power(&self, value: bool) {
-		self.sender.send(Request::Power(value)).unwrap();
+	pub fn power(&self, value: bool) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Power(value))
 	}
 }
 

@@ -90,19 +90,19 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					// On heartbeat sanitize the windows from all the bad things that can
 					// happen with X11.
 					timer::Response::Heartbeat => {
-						locker.sanitize();
+						locker.sanitize().unwrap();
 					}
 
 					timer::Response::Start => {
-						locker.start();
+						locker.start().unwrap();
 					}
 
 					timer::Response::Lock => {
-						locker.lock();
+						locker.lock().unwrap();
 					}
 
 					timer::Response::Blank => {
-						locker.power(false);
+						locker.power(false).unwrap();
 					}
 				}
 			},
@@ -120,17 +120,17 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 				match event {
 					locker::Response::Keyboard(key) => {
-						timer.reset(timer::Event::Blank);
-						locker.power(true);
-
 						if let locker::Keyboard::Char('q') = key {
-							locker.stop();
-							//timer.restart();
+							locker.stop().unwrap();
+							timer.restart();
 						}
 					}
 
 					// Reset idle timer.
 					locker::Response::Activity => {
+						locker.power(true).unwrap();
+
+						timer.reset(timer::Event::Blank);
 						timer.reset(timer::Event::Idle);
 					}
 				}
