@@ -133,10 +133,24 @@ impl Window {
 
 				// Remap the window in case stuff like popups went above the locker.
 				xlib::XMapRaised(self.display.id, self.id);
-				xlib::XSync(self.display.id, xlib::False);
 			}
 
 			// TODO(meh): Actually sanitize.
+			xlib::XSync(self.display.id, xlib::False);
+		}
+	}
+
+	pub fn resize(&mut self, width: u32, height: u32) {
+		unsafe {
+			if self.width == width && self.height == height {
+				return;
+			}
+
+			self.width  = width;
+			self.height = height;
+
+			xlib::XResizeWindow(self.display.id, self.id, width, height);
+			xlib::XSync(self.display.id, xlib::False);
 		}
 	}
 
