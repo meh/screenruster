@@ -198,6 +198,13 @@ impl Saver {
 		})
 	}
 
+	pub fn resize(&self, width: u32, height: u32) -> Result<(), SendError<Option<Request>>> {
+		self.send(Request::Resize {
+			width:  width,
+			height: height,
+		})
+	}
+
 	/// Start the saver.
 	pub fn start(&self) -> Result<(), SendError<Option<Request>>> {
 		self.send(Request::Start)
