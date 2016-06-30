@@ -18,8 +18,15 @@ pub struct Display {
 
 #[derive(Debug)]
 pub struct Extension {
-	pub event: c_int,
-	pub error: c_int,
+	event: c_int,
+	error: c_int,
+}
+
+impl Extension {
+	#[inline(always)]
+	pub fn event(&self, event: c_int) -> c_int {
+		self.event + event
+	}
 }
 
 impl Display {
