@@ -21,9 +21,8 @@ in/out or dialog boxes, this further reduces the attack surface of the locker.
 
 Protocol
 ========
-The protocol is line based, where each line contains a JSON encoded message.
-
-Each message has a `type` field with the name of the message, the parameters
+The protocol is line based, where each line contains a JSON encoded message,
+each message has a `type` field with the name of the message, the parameters
 are attributes on the same object.
 
 Requests
