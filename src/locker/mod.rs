@@ -208,39 +208,62 @@ impl Locker {
 
 						xlib::XNextEvent(display.id, &mut event);
 						let any    = xlib::XAnyEvent::from(event);
-						let window = windows.values().find(|w| w.id == any.window || w.root == any.window);
 
-						match (event.get_type(), window) {
-							// Handle keyboard input to our window.
-							(xlib::KeyPress, Some(window)) | (xlib::KeyRelease, Some(window)) => {
-								let     key    = xlib::XKeyEvent::from(event);
-								let     code   = key.keycode;
-								let mut ic_sym = 0;
+						match event.get_type() {
+							// Handle screen changes.
+							e if display.randr.as_ref().map_or(false, |rr| e == rr.event(xrandr::RRScreenChangeNotify)) => {
+								let     event   = xrandr::XRRScreenChangeNotifyEvent::from(event);
+								let mut crashed = Vec::new();
 
-								let mut buffer = [0u8; 16];
-								let     count  = xlib::Xutf8LookupString(window.ic, mem::transmute(&event),
-									mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-									&mut ic_sym, ptr::null_mut());
+								for window in windows.values_mut() {
+									if window.root == event.root {
+										window.resize(event.width as u32, event.height as u32);
 
-								for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-									sender.send(Response::Keyboard(Keyboard::Char(ch))).unwrap();
+										if let Some(saver) = savers.get_mut(&window.id) {
+											if saver.resize(event.width as u32, event.height as u32).is_err() {
+												crashed.push(window.id);
+											}
+										}
+									}
 								}
 
-								let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
-
-								if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
-									sym = ic_sym;
+								for id in &crashed {
+									windows.get_mut(id).unwrap().blank();
+									savers.remove(id);
 								}
-
-								sender.send(Response::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
 							}
 
-							(other, Some(_)) => {
-								debug!("event: {}", other);
+							// Handle keyboard input.
+							xlib::KeyPress | xlib::KeyRelease => {
+								if let Some(window) = windows.values().find(|w| w.id == any.window || w.root == any.window) {
+									let     key    = xlib::XKeyEvent::from(event);
+									let     code   = key.keycode;
+									let mut ic_sym = 0;
+
+									let mut buffer = [0u8; 16];
+									let     count  = xlib::Xutf8LookupString(window.ic, mem::transmute(&event),
+										mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
+										&mut ic_sym, ptr::null_mut());
+
+									for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+										sender.send(Response::Keyboard(Keyboard::Char(ch))).unwrap();
+									}
+
+									let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
+
+									if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
+										sym = ic_sym;
+									}
+
+									sender.send(Response::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
+								}
+								else {
+									// TODO(meh): Handle activity from other windows.
+								}
 							}
 
-							(other, None) => {
-								debug!("event for {}: {}", any.window, other);
+							event => {
+								debug!("event for {}: {}", any.window, event);
 							}
 						}
 					}
