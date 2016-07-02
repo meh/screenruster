@@ -9,11 +9,11 @@ use std::sync::Arc;
 
 use rand::{self, Rng};
 use x11::{xlib, keysym, xrandr};
-use libc::{c_int, c_ulong};
+use libc::{c_int, c_uint, c_ulong};
 
 use error;
 use config::Config;
-use saver::{self, Saver};
+use saver::{self, Saver, Password, Pointer};
 
 mod display;
 pub use self::display::Display;
@@ -49,13 +49,7 @@ pub enum Request {
 #[derive(Clone)]
 pub enum Response {
 	Activity,
-	Keyboard(Keyboard),
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Keyboard {
-	Char(char),
-	Key(c_ulong, bool),
+	Password(String),
 }
 
 impl Locker {
@@ -69,6 +63,8 @@ impl Locker {
 
 			for screen in 0 .. xlib::XScreenCount(display.id) {
 				let window = Window::create(display.clone(), screen)?;
+
+				display.observe(window.root);
 				windows.insert(window.id, window);
 			}
 
@@ -205,15 +201,17 @@ impl Locker {
 							thread::sleep(Duration::from_millis(100));
 							continue;
 						}
+						else {
+							xlib::XNextEvent(display.id, &mut event);
+						}
 
-						xlib::XNextEvent(display.id, &mut event);
-						let any    = xlib::XAnyEvent::from(event);
+						let     any    = xlib::XAnyEvent::from(event);
+						let mut crashed = Vec::new();
 
 						match event.get_type() {
 							// Handle screen changes.
 							e if display.randr.as_ref().map_or(false, |rr| e == rr.event(xrandr::RRScreenChangeNotify)) => {
-								let     event   = xrandr::XRRScreenChangeNotifyEvent::from(event);
-								let mut crashed = Vec::new();
+								let event = xrandr::XRRScreenChangeNotifyEvent::from(event);
 
 								for window in windows.values_mut() {
 									if window.root == event.root {
@@ -226,16 +224,11 @@ impl Locker {
 										}
 									}
 								}
-
-								for id in &crashed {
-									windows.get_mut(id).unwrap().blank();
-									savers.remove(id);
-								}
 							}
 
 							// Handle keyboard input.
 							xlib::KeyPress | xlib::KeyRelease => {
-								if let Some(window) = windows.values().find(|w| w.id == any.window || w.root == any.window) {
+								if let Some(window) = windows.values().find(|w| w.id == any.window) {
 									let     key    = xlib::XKeyEvent::from(event);
 									let     code   = key.keycode;
 									let mut ic_sym = 0;
@@ -246,7 +239,13 @@ impl Locker {
 										&mut ic_sym, ptr::null_mut());
 
 									for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-										sender.send(Response::Keyboard(Keyboard::Char(ch))).unwrap();
+										// TODO(meh): Implement password handling.
+
+										for (&id, saver) in &savers {
+											if saver.password(Password::Insert).is_err() {
+												crashed.push(id);
+											}
+										}
 									}
 
 									let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
@@ -255,16 +254,74 @@ impl Locker {
 										sym = ic_sym;
 									}
 
-									sender.send(Response::Keyboard(Keyboard::Key(sym, event.get_type() == xlib::KeyPress))).unwrap();
+									match sym as c_uint {
+										// XXX(meh): Temporary.
+										keysym::XK_Escape => {
+											sender.send(Response::Password("".into())).unwrap();
+										}
+
+										_ => ()
+									}
 								}
 								else {
-									// TODO(meh): Handle activity from other windows.
+									sender.send(Response::Activity).unwrap();
 								}
+							}
+
+							// Handle mouse button presses.
+							xlib::ButtonPress | xlib::ButtonRelease => {
+								if let Some(window) = windows.values().find(|w| w.id == any.window) {
+									if let Some(saver) = savers.get(&window.id) {
+										let event = xlib::XButtonEvent::from(event);
+
+										if saver.pointer(Pointer::Button {
+											x: event.x,
+											y: event.y,
+
+											button: event.button as u8,
+											press:  event.type_ == xlib::ButtonPress,
+										}).is_err() {
+											crashed.push(window.id);
+										}
+									}
+								}
+								else {
+									sender.send(Response::Activity).unwrap();
+								}
+							}
+
+							// Handle mouse motion.
+							xlib::MotionNotify => {
+								if let Some(window) = windows.values().find(|w| w.id == any.window) {
+									if let Some(saver) = savers.get(&window.id) {
+										let event = xlib::XMotionEvent::from(event);
+
+										if saver.pointer(Pointer::Move {
+											x: event.x,
+											y: event.y,
+										}).is_err() {
+											crashed.push(window.id);
+										}
+									}
+								}
+								else {
+									sender.send(Response::Activity).unwrap();
+								}
+							}
+
+							// On window changes, try to observe the window.
+							xlib::MapNotify | xlib::UnmapNotify | xlib::ConfigureNotify => {
+								display.observe(any.window);
 							}
 
 							event => {
 								debug!("event for {}: {}", any.window, event);
 							}
+						}
+
+						for id in &crashed {
+							windows.get_mut(id).unwrap().blank();
+							savers.remove(id);
 						}
 					}
 				});
