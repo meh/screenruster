@@ -62,12 +62,13 @@ XRandr is used to change resolution or rotate the screen.
 - `width`  = `Integer`
 - `height` = `Integer`
 
-### Dialog
+### Pointer
 
-The dialog request is sent when the input dialog should be shown or hidden.
+The pointer request is sent when a pointer event on the saver window has happened.
 
-- `type`   = `dialog`
-- `dialog` = `Boolean`
+- `type`    = `pointer`
+- `move`    = `Object { x, y }`
+- `buttonn` = `Object { x, y, button, press }`
 
 ### Password
 
