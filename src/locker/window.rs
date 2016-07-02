@@ -83,6 +83,10 @@ impl Window {
 					xlib::InputOutput as c_uint, (*info).visual, mask, &mut attrs)
 			};
 
+			// Set window property to mark the window as ours.
+			xlib::XChangeProperty(display.id, id, display.atoms.saver, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
+				&xlib::True as *const _ as *const _, 1);
+
 			// Make the cursor invisible.
 			let cursor = {
 				let bit    = xlib::XCreatePixmapFromBitmapData(display.id, id, b"\x00".as_ptr() as *const _ as *mut _, 1, 1, black, black, 1);

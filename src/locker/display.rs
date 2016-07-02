@@ -1,3 +1,4 @@
+use std::mem;
 use std::ptr;
 use std::ffi::CStr;
 use std::sync::Arc;
@@ -14,6 +15,13 @@ pub struct Display {
 	pub id:    *mut xlib::Display,
 	pub randr: Option<Extension>,
 	pub dpms:  Option<Extension>,
+
+	pub atoms: Atoms,
+}
+
+#[derive(Debug)]
+pub struct Atoms {
+	pub saver: xlib::Atom,
 }
 
 #[derive(Debug)]
@@ -26,6 +34,11 @@ impl Extension {
 	#[inline(always)]
 	pub fn event(&self, event: c_int) -> c_int {
 		self.event + event
+	}
+
+	#[inline(always)]
+	pub fn error(&self, error: c_int) -> c_int {
+		self.error + error
 	}
 }
 
@@ -73,6 +86,10 @@ impl Display {
 					else {
 						None
 					}
+				},
+
+				atoms: Atoms {
+					saver: util::with("SCREENRUSTER_SAVER", |name| xlib::XInternAtom(id, name, xlib::False)),
 				},
 			}))
 		}
@@ -124,6 +141,56 @@ impl Display {
 		unsafe {
 			dpms::DPMSForceLevel(self.id, if value { dpms::DPMSModeOn } else { dpms::DPMSModeOff });
 			xlib::XSync(self.id, xlib::False);
+		}
+	}
+
+	/// Observe events on the given window and all its children.
+	pub fn observe(&self, window: xlib::Window) {
+		unsafe {
+			let mut root     = mem::zeroed();
+			let mut parent   = mem::zeroed();
+			let mut children = mem::zeroed();
+			let mut count    = mem::zeroed();
+
+			if xlib::XQueryTree(self.id, window, &mut root, &mut parent, &mut children, &mut count) != xlib::True {
+				return;
+			}
+
+			// Return if the window is one of ours.
+			{
+				let mut kind   = mem::zeroed();
+				let mut format = mem::zeroed();
+				let mut count  = mem::zeroed();
+				let mut after  = mem::zeroed();
+				let mut values = mem::zeroed();
+
+				xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
+					&mut kind, &mut format, &mut count, &mut after, &mut values);
+
+				if kind == xlib::XA_CARDINAL {
+					debug!("not observing our own window");
+					return;
+				}
+			}
+
+			let mut attrs = mem::zeroed();
+			xlib::XGetWindowAttributes(self.id, window, &mut attrs);
+
+			// Listen to key press and release only if the window is not already listening for them, so we do not
+			// steal their keys.
+			//
+			// Listen for pointer motion events and window changes.
+			xlib::XSelectInput(self.id, window, (attrs.all_event_masks | attrs.do_not_propagate_mask) &
+				(xlib::KeyPressMask | xlib::KeyReleaseMask) |
+				(xlib::PointerMotionMask | xlib::SubstructureNotifyMask));
+
+			if !children.is_null() && count > 0 {
+				for i in 0 .. count {
+					self.observe(*children.offset(i as isize));
+				}
+
+				xlib::XFree(children as *mut _);
+			}
 		}
 	}
 }
