@@ -117,11 +117,10 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			// Locker events.
 			event = l.recv() => {
 				match event.unwrap() {
-					locker::Response::Keyboard(key) => {
-						if let locker::Keyboard::Char('q') = key {
-							locker.stop().unwrap();
-							timer.restart();
-						}
+					// XXX(meh): Temporary.
+					locker::Response::Password(_) => {
+						locker.stop().unwrap();
+						timer.restart();
 					}
 
 					// Reset idle timer.
