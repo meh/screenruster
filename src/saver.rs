@@ -5,7 +5,7 @@ use std::sync::mpsc::{Receiver, RecvError, TryRecvError, Sender, SendError, chan
 
 use toml;
 use log;
-pub use api::{Request, Response, Password};
+pub use api::{Request, Response, Password, Pointer};
 
 use api::json;
 use error;
@@ -90,9 +90,22 @@ impl Saver {
 							"height" => height
 						},
 
-						Request::Dialog(active) => object!{
-							"type"   => "dialog",
-							"dialog" => active
+						Request::Pointer(Pointer::Move { x, y }) => object!{
+							"type" => "pointer",
+							"move" => object!{
+								"x" => x,
+								"y" => y
+							}
+						},
+
+						Request::Pointer(Pointer::Button { x, y, button, press }) => object!{
+							"type"   => "pointer",
+							"button" => object!{
+								"x"      => x,
+								"y"      => y,
+								"button" => button,
+								"press"  => press
+							}
 						},
 
 						Request::Password(password) => object!{
@@ -203,6 +216,14 @@ impl Saver {
 			width:  width,
 			height: height,
 		})
+	}
+
+	pub fn pointer(&self, pointer: Pointer) -> Result<(), SendError<Option<Request>>> {
+		self.send(Request::Pointer(pointer))
+	}
+
+	pub fn password(&self, password: Password) -> Result<(), SendError<Option<Request>>> {
+		self.send(Request::Password(password))
 	}
 
 	/// Start the saver.
