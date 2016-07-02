@@ -159,12 +159,12 @@ impl Window {
 		unsafe {
 			let result = match grab {
 				Grab::Keyboard => {
-					xlib::XGrabKeyboard(self.display.id, self.root, xlib::True,
+					xlib::XGrabKeyboard(self.display.id, self.id, xlib::False,
 						xlib::GrabModeAsync, xlib::GrabModeAsync, xlib::CurrentTime)
 				}
 
 				Grab::Pointer => {
-					xlib::XGrabPointer(self.display.id, self.root, xlib::False,
+					xlib::XGrabPointer(self.display.id, self.id, xlib::False,
 						(xlib::ButtonPressMask | xlib::ButtonReleaseMask | xlib::PointerMotionMask) as c_uint,
 						xlib::GrabModeAsync, xlib::GrabModeAsync, 0,
 						xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(self.display.id)),
@@ -211,13 +211,13 @@ impl Window {
 	/// Lock the window.
 	pub fn lock(&mut self) -> error::Result<()> {
 		unsafe {
-			// Try to grab the keyboard and mouse.
-			self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
-			self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
-
 			// Map the window and make sure it's raised.
 			xlib::XMapRaised(self.display.id, self.id);
 			xlib::XSync(self.display.id, xlib::False);
+
+			// Try to grab the keyboard and mouse.
+			self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
+			self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
 
 			// Some retarded X11 applications grab the keyboard and pointer for long
 			// periods of time for no reason, so try to change focus and grab again.
