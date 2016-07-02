@@ -1,7 +1,7 @@
 use std::ptr;
 use std::mem;
 use std::str;
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
 use std::thread;
 use std::time::Duration;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
@@ -84,6 +84,22 @@ impl Locker {
 					let mut event = mem::zeroed(): xlib::XEvent;
 
 					loop {
+						// Purge crashed savers.
+						{
+							let mut crashed = HashSet::new();
+
+							for (&id, saver) in &savers {
+								if saver.is_crashed() {
+									crashed.insert(id);
+								}
+							}
+
+							for id in &crashed {
+								windows.get_mut(id).unwrap().blank();
+								savers.remove(id);
+							}
+						}
+
 						// Check if there are any control messages.
 						if let Ok(message) = receiver.try_recv() {
 							match message {
@@ -100,10 +116,11 @@ impl Locker {
 										if !config.savers().is_empty() {
 											let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
 
-											if let Ok(saver) = Saver::spawn(name) {
-												if saver.config(config.saver(name)).is_ok() &&
-												   saver.target(display.name(), window.screen, window.id).is_ok()
-												{
+											if let Ok(mut saver) = Saver::spawn(name) {
+												saver.config(config.saver(name));
+												saver.target(display.name(), window.screen, window.id);
+
+												if !saver.is_crashed() {
 													savers.insert(window.id, saver);
 													has_saver = true;
 												}
@@ -111,7 +128,7 @@ impl Locker {
 										}
 
 										if !has_saver {
-											// TODO(meh): Do not crash on grab failure.
+											// FIXME(meh): Do not crash on grab failure.
 											window.lock().unwrap();
 											window.blank();
 										}
@@ -131,7 +148,9 @@ impl Locker {
 										let mut has_saver = false;
 
 										if let Some(saver) = savers.get_mut(&window.id) {
-											if saver.stop().is_ok() {
+											saver.stop();
+
+											if !saver.is_crashed() {
 												has_saver = true;
 											}
 										}
@@ -149,47 +168,33 @@ impl Locker {
 
 						// Check if there are any messages from savers.
 						{
-							let mut stopped = Vec::new();
-							let mut crashed = Vec::new();
+							let mut stopped = HashSet::new();
 
-							for (&id, saver) in &savers {
-								let response = saver.recv();
-
-								if response.is_err() {
-									crashed.push(id);
-									continue;
-								}
-
-								match response.unwrap() {
+							for (&id, saver) in &mut savers {
+								match saver.recv() {
 									Some(saver::Response::Initialized) => {
-										if saver.start().is_err() {
-											crashed.push(id);
-										}
+										saver.start();
 									}
 
 									Some(saver::Response::Started) => {
-										// TODO(meh): Do not crash on grab failure.
+										// FIXME(meh): Do not crash on grab failure.
 										windows.get_mut(&id).unwrap().lock().unwrap();
 									}
 
 									Some(saver::Response::Stopped) => {
-										stopped.push(id);
+										if saver.is_stopping() {
+											stopped.insert(id);
+										}
+										else {
+											saver.kill();
+										}
 									}
 
-									None => ()
+									None => (),
 								}
 							}
 
-							// If the saver has crashed blank the window and remove it.
-							for id in &crashed {
-								windows.get_mut(id).unwrap().blank();
-								savers.remove(id);
-							}
-
 							// Unlock the stopped savers.
-							//
-							// TODO(meh): Need to check if the saver was actually requested
-							//            to stop.
 							for id in &stopped {
 								windows.get_mut(id).unwrap().unlock();
 								savers.remove(id);
@@ -201,12 +206,9 @@ impl Locker {
 							thread::sleep(Duration::from_millis(100));
 							continue;
 						}
-						else {
-							xlib::XNextEvent(display.id, &mut event);
-						}
 
-						let     any    = xlib::XAnyEvent::from(event);
-						let mut crashed = Vec::new();
+						xlib::XNextEvent(display.id, &mut event);
+						let any = xlib::XAnyEvent::from(event);
 
 						match event.get_type() {
 							// Handle screen changes.
@@ -218,9 +220,7 @@ impl Locker {
 										window.resize(event.width as u32, event.height as u32);
 
 										if let Some(saver) = savers.get_mut(&window.id) {
-											if saver.resize(event.width as u32, event.height as u32).is_err() {
-												crashed.push(window.id);
-											}
+											saver.resize(event.width as u32, event.height as u32);
 										}
 									}
 								}
@@ -229,38 +229,48 @@ impl Locker {
 							// Handle keyboard input.
 							xlib::KeyPress | xlib::KeyRelease => {
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									let     key    = xlib::XKeyEvent::from(event);
-									let     code   = key.keycode;
-									let mut ic_sym = 0;
+									let mut key  = xlib::XKeyEvent::from(event);
+									let     code = key.keycode;
 
-									let mut buffer = [0u8; 16];
-									let     count  = xlib::Xutf8LookupString(window.ic, mem::transmute(&event),
-										mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-										&mut ic_sym, ptr::null_mut());
+									if key.type_ == xlib::KeyRelease {
+										let mut ic_sym = 0;
+										let mut buffer = [0u8; 16];
+										let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
+											mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
+											&mut ic_sym, ptr::null_mut());
 
-									for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-										// TODO(meh): Implement password handling.
+										for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+											// TODO(meh): Implement password handling.
 
-										for (&id, saver) in &savers {
-											if saver.password(Password::Insert).is_err() {
-												crashed.push(id);
+											for saver in savers.values_mut() {
+												saver.password(Password::Insert);
 											}
 										}
-									}
 
-									let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
+										let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
 
-									if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
-										sym = ic_sym;
-									}
-
-									match sym as c_uint {
-										// XXX(meh): Temporary.
-										keysym::XK_Escape => {
-											sender.send(Response::Password("".into())).unwrap();
+										if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
+											sym = ic_sym;
 										}
 
-										_ => ()
+										match sym as c_uint {
+											keysym::XK_Escape => {
+												for saver in savers.values_mut() {
+													saver.password(Password::Reset);
+												}
+											}
+
+											keysym::XK_Return => {
+												for saver in savers.values_mut() {
+													saver.password(Password::Check);
+												}
+
+												// XXX(meh): Temporary.
+												sender.send(Response::Password("god".into())).unwrap();
+											}
+
+											_ => ()
+										}
 									}
 								}
 								else {
@@ -271,18 +281,16 @@ impl Locker {
 							// Handle mouse button presses.
 							xlib::ButtonPress | xlib::ButtonRelease => {
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									if let Some(saver) = savers.get(&window.id) {
+									if let Some(saver) = savers.get_mut(&window.id) {
 										let event = xlib::XButtonEvent::from(event);
 
-										if saver.pointer(Pointer::Button {
+										saver.pointer(Pointer::Button {
 											x: event.x,
 											y: event.y,
 
 											button: event.button as u8,
 											press:  event.type_ == xlib::ButtonPress,
-										}).is_err() {
-											crashed.push(window.id);
-										}
+										})
 									}
 								}
 								else {
@@ -293,15 +301,13 @@ impl Locker {
 							// Handle mouse motion.
 							xlib::MotionNotify => {
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									if let Some(saver) = savers.get(&window.id) {
+									if let Some(saver) = savers.get_mut(&window.id) {
 										let event = xlib::XMotionEvent::from(event);
 
-										if saver.pointer(Pointer::Move {
+										saver.pointer(Pointer::Move {
 											x: event.x,
 											y: event.y,
-										}).is_err() {
-											crashed.push(window.id);
-										}
+										})
 									}
 								}
 								else {
@@ -317,11 +323,6 @@ impl Locker {
 							event => {
 								debug!("event for {}: {}", any.window, event);
 							}
-						}
-
-						for id in &crashed {
-							windows.get_mut(id).unwrap().blank();
-							savers.remove(id);
 						}
 					}
 				});
