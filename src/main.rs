@@ -45,14 +45,14 @@ mod error;
 mod config;
 use config::Config;
 
-mod timer;
-use timer::Timer;
+mod locker;
+use locker::Locker;
 
 mod server;
 use server::Server;
 
-mod locker;
-use locker::Locker;
+mod timer;
+use timer::Timer;
 
 mod saver;
 
@@ -91,33 +91,47 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let locker = Locker::spawn(config)?;
 
 	// XXX: select! is icky, this works around shadowing the outer name
-	let t = timer.as_ref();
-	let s = server.as_ref();
 	let l = locker.as_ref();
+	let s = server.as_ref();
+	let t = timer.as_ref();
+
+	let mut locked  = false;
+	let mut started = false;
+	let mut blanked = false;
 
 	loop {
 		select! {
-			// Timer events.
-			event = t.recv() => {
+			// Locker events.
+			event = l.recv() => {
 				match event.unwrap() {
-					timer::Response::Report { .. } => (),
+					// XXX(meh): Temporary.
+					locker::Response::Password(pwd) => {
+						info!("password={}", pwd);
 
-					// On heartbeat sanitize the windows from all the bad things that can
-					// happen with X11.
-					timer::Response::Heartbeat => {
-						locker.sanitize().unwrap();
+						locker.stop().unwrap();
+						timer.restart();
 					}
 
-					timer::Response::Start => {
-						locker.start().unwrap();
-					}
+					// On system activity.
+					locker::Response::Activity => {
+						// If the screen is blanked, unblank it.
+						if blanked {
+							locker.power(true).unwrap();
+							blanked = false;
+						}
 
-					timer::Response::Lock => {
-						locker.lock().unwrap();
-					}
-
-					timer::Response::Blank => {
-						locker.power(false).unwrap();
+						// If the saver has started but the screen is not locked, unlock
+						// it, otherwise just reset the timers.
+						if started {
+							if !locked {
+								started = false;
+								locker.stop().unwrap();
+							}
+						}
+						else {
+							timer.reset(timer::Event::Blank);
+							timer.reset(timer::Event::Idle);
+						}
 					}
 				}
 			},
@@ -131,21 +145,28 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 				}
 			},
 
-			// Locker events.
-			event = l.recv() => {
+			// Timer events.
+			event = t.recv() => {
 				match event.unwrap() {
-					// XXX(meh): Temporary.
-					locker::Response::Password(_) => {
-						locker.stop().unwrap();
-						timer.restart();
+					timer::Response::Report { .. } => (),
+
+					timer::Response::Heartbeat => {
+						locker.sanitize().unwrap();
 					}
 
-					// Reset idle timer.
-					locker::Response::Activity => {
-						locker.power(true).unwrap();
+					timer::Response::Start => {
+						started = true;
+						locker.start().unwrap();
+					}
 
-						timer.reset(timer::Event::Blank);
-						timer.reset(timer::Event::Idle);
+					timer::Response::Lock => {
+						locked = true;
+						locker.lock().unwrap();
+					}
+
+					timer::Response::Blank => {
+						locker.power(false).unwrap();
+						blanked = true;
 					}
 				}
 			}
