@@ -56,10 +56,11 @@ pub struct Locker {
 #[derive(Clone)]
 pub enum Request {
 	Sanitize,
+	Power(bool),
 
 	Start,
 	Lock,
-	Power(bool),
+	Auth(bool),
 	Stop,
 }
 
@@ -72,10 +73,12 @@ pub enum Response {
 impl Locker {
 	pub fn spawn(config: Config) -> error::Result<Locker> {
 		unsafe {
-			let     display = Display::open(config.locker())?;
-			let mut windows = HashMap::new(): HashMap<xlib::Window, Window>;
-			let mut savers  = HashMap::new(): HashMap<xlib::Window, Saver>;
+			let mut windows  = HashMap::new(): HashMap<xlib::Window, Window>;
+			let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
+			let mut password = String::new();
+			let mut event    = mem::zeroed(): xlib::XEvent;
 
+			let display = Display::open(config.locker())?;
 			xlib::XSetScreenSaver(display.id, 0, 0, 0, 0);
 
 			for screen in 0 .. xlib::XScreenCount(display.id) {
@@ -98,8 +101,6 @@ impl Locker {
 				let display = display.clone();
 
 				thread::spawn(move || {
-					let mut event = mem::zeroed(): xlib::XEvent;
-
 					loop {
 						// Purge crashed savers.
 						{
@@ -124,6 +125,10 @@ impl Locker {
 									for window in windows.values_mut() {
 										window.sanitize();
 									}
+								}
+
+								Request::Power(value) => {
+									display.power(value);
 								}
 
 								Request::Start => {
@@ -156,8 +161,10 @@ impl Locker {
 
 								}
 
-								Request::Power(value) => {
-									display.power(value);
+								Request::Auth(state) => {
+									for saver in savers.values_mut() {
+										saver.password(if state { Password::Success } else { Password::Failure });
+									}
 								}
 
 								Request::Stop => {
@@ -244,59 +251,72 @@ impl Locker {
 							}
 
 							// Handle keyboard input.
-							xlib::KeyPress | xlib::KeyRelease => {
+							//
+							// Note we only act on key presses because `Xutf8LookupString`
+							// only generates strings from `KeyPress` events.
+							xlib::KeyPress => {
+								sender.send(Response::Activity).unwrap();
+
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
 									let mut key  = xlib::XKeyEvent::from(event);
 									let     code = key.keycode;
 
-									if key.type_ == xlib::KeyRelease {
-										let mut ic_sym = 0;
-										let mut buffer = [0u8; 16];
-										let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
-											mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-											&mut ic_sym, ptr::null_mut());
+									let mut ic_sym = 0;
+									let mut buffer = [0u8; 16];
+									let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
+										mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
+										&mut ic_sym, ptr::null_mut());
 
-										for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-											// TODO(meh): Implement password handling.
+									for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+										password.push(ch);
 
-											for saver in savers.values_mut() {
-												saver.password(Password::Insert);
-											}
-										}
-
-										let mut sym = xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0);
-
-										if keysym::XK_KP_Space as c_ulong <= sym && sym <= keysym::XK_KP_9 as c_ulong {
-											sym = ic_sym;
-										}
-
-										match sym as c_uint {
-											keysym::XK_Escape => {
-												for saver in savers.values_mut() {
-													saver.password(Password::Reset);
-												}
-											}
-
-											keysym::XK_Return => {
-												for saver in savers.values_mut() {
-													saver.password(Password::Check);
-												}
-
-												// XXX(meh): Temporary.
-												sender.send(Response::Password("god".into())).unwrap();
-											}
-
-											_ => ()
+										for saver in savers.values_mut() {
+											saver.password(Password::Insert);
 										}
 									}
+
+									match xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0) as c_uint {
+										// Delete a character.
+										keysym::XK_BackSpace => {
+											password.pop();
+
+											for saver in savers.values_mut() {
+												saver.password(Password::Delete);
+											}
+										}
+
+										// Clear the password.
+										keysym::XK_Escape => {
+											password.clear();
+
+											for saver in savers.values_mut() {
+												saver.password(Password::Reset);
+											}
+										}
+
+										// Send the password.
+										keysym::XK_Return => {
+											for saver in savers.values_mut() {
+												saver.password(Password::Check);
+											}
+
+											sender.send(Response::Password(password)).unwrap();
+											password = String::new();
+										}
+
+										_ => ()
+									}
 								}
-								else {
-									sender.send(Response::Activity).unwrap();
-								}
+							}
+
+							xlib::KeyRelease => {
+								sender.send(Response::Activity).unwrap();
 							}
 
 							// Handle mouse button presses.
 							xlib::ButtonPress | xlib::ButtonRelease => {
+								sender.send(Response::Activity).unwrap();
+
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
 									if let Some(saver) = savers.get_mut(&window.id) {
 										let event = xlib::XButtonEvent::from(event);
@@ -310,13 +330,12 @@ impl Locker {
 										})
 									}
 								}
-								else {
-									sender.send(Response::Activity).unwrap();
-								}
 							}
 
 							// Handle mouse motion.
 							xlib::MotionNotify => {
+								sender.send(Response::Activity).unwrap();
+
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
 									if let Some(saver) = savers.get_mut(&window.id) {
 										let event = xlib::XMotionEvent::from(event);
@@ -326,9 +345,6 @@ impl Locker {
 											y: event.y,
 										})
 									}
-								}
-								else {
-									sender.send(Response::Activity).unwrap();
 								}
 							}
 
@@ -363,6 +379,10 @@ impl Locker {
 
 	pub fn lock(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Lock)
+	}
+
+	pub fn auth(&self, value: bool) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Auth(value))
 	}
 
 	pub fn stop(&self) -> Result<(), SendError<Request>> {
