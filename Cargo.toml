@@ -3,7 +3,7 @@ name    = "screenruster"
 version = "0.1.0"
 
 authors = ["meh. <meh@schizofreni.co>"]
-license = "WTFPL"
+license = "GPLv3"
 
 description = "X11 screen saver and locker."
 repository  = "https://github.com/meh/screenruster"
