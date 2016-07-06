@@ -143,24 +143,24 @@ impl Timer {
 							}
 						}
 					}
-
-					// If the screen is not blanked.
-					if blanked.is_none() {
-						// If blanking is enabled.
-						if let Some(after) = config.blank {
-							// If it's time to blank, send th emessage and enable the blank guard.
-							if unblanked.unwrap_or(start).elapsed().as_secs() >= after as u64 {
-								blanked = Some(Instant::now());
-								sender.send(Response::Blank).unwrap();
-							}
-						}
-					}
 				}
 				else {
 					// If the system has been idle long enough send the message.
 					if idle.elapsed().as_secs() >= config.timeout as u64 {
 						sender.send(Response::Start).unwrap();
 						started = Some(Instant::now());
+					}
+				}
+
+				// If the screen is not blanked.
+				if blanked.is_none() {
+					// If blanking is enabled.
+					if let Some(after) = config.blank {
+						// If it's time to blank, send the message and enable the blank guard.
+						if unblanked.unwrap_or(idle).elapsed().as_secs() >= after as u64 {
+							blanked = Some(Instant::now());
+							sender.send(Response::Blank).unwrap();
+						}
 					}
 				}
 			}
