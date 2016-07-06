@@ -15,7 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(type_ascription, question_mark, associated_type_defaults, mpsc_select, stmt_expr_attributes)]
+#![feature(type_ascription, question_mark, associated_type_defaults)]
+#![feature(mpsc_select, stmt_expr_attributes, box_syntax)]
 
 #[macro_use]
 extern crate log;
@@ -25,9 +26,13 @@ extern crate clap;
 extern crate xdg;
 extern crate toml;
 extern crate rand;
+extern crate users;
 
 #[cfg(feature = "dbus")]
 extern crate dbus;
+
+#[cfg(feature = "auth-pam")]
+extern crate pam_auth as pam;
 
 extern crate libc;
 extern crate x11;
@@ -47,6 +52,9 @@ use config::Config;
 
 mod locker;
 use locker::Locker;
+
+mod auth;
+use auth::Auth;
 
 mod server;
 use server::Server;
@@ -87,11 +95,13 @@ fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 
 fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let timer  = Timer::spawn(config.timer())?;
+	let auth   = Auth::spawn(config.auth())?;
 	let server = Server::spawn(config.server())?;
 	let locker = Locker::spawn(config)?;
 
 	// XXX: select! is icky, this works around shadowing the outer name
 	let l = locker.as_ref();
+	let a = auth.as_ref();
 	let s = server.as_ref();
 	let t = timer.as_ref();
 
@@ -104,12 +114,9 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			// Locker events.
 			event = l.recv() => {
 				match event.unwrap() {
-					// XXX(meh): Temporary.
+					// Try authorization.
 					locker::Response::Password(pwd) => {
-						info!("password={}", pwd);
-
-						locker.stop().unwrap();
-						timer.restart();
+						auth.authenticate(pwd).unwrap();
 					}
 
 					// On system activity.
@@ -132,6 +139,28 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							timer.reset(timer::Event::Blank);
 							timer.reset(timer::Event::Idle);
 						}
+					}
+				}
+			},
+
+			// Authentication events.
+			event = a.recv() => {
+				match event.unwrap() {
+					auth::Response::Success => {
+						info!("authorization: success");
+
+						locked  = false;
+						started = false;
+
+						locker.auth(true).unwrap();
+						locker.stop().unwrap();
+						timer.restart();
+					}
+
+					auth::Response::Failure => {
+						info!("authorization: failure");
+
+						locker.auth(false).unwrap();
 					}
 				}
 			},

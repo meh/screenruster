@@ -5,9 +5,6 @@ lock    = 0
 cycle   = false
 blank   = false
 
-[auth]
-use = ["internal"]
-
 [auth.internal]
 password = "test"
 

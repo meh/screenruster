@@ -74,10 +74,7 @@ impl Default for Locker {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct Auth {
-	using: Vec<String>,
-	table: HashMap<String, toml::Table>,
-}
+pub struct Auth(toml::Table);
 
 #[derive(Clone, Default, Debug)]
 pub struct Saver {
@@ -151,20 +148,12 @@ impl Config {
 			},
 
 			auth: {
-				let mut config = Auth::default();
-
 				if let Some(table) = table.get("auth").and_then(|v| v.as_table()) {
-					if let Some(list) = table.get("use").and_then(|v| v.as_slice()) {
-						for using in list {
-							if let Some(name) = using.as_str() {
-								config.using.push(name.into());
-								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).cloned().unwrap_or_default());
-							}
-						}
-					}
+					Auth(table.clone())
 				}
-
-				config
+				else {
+					Auth(toml::Table::new())
+				}
 			},
 
 			saver: {
@@ -198,17 +187,8 @@ impl Config {
 		self.locker.clone()
 	}
 
-	pub fn auth<S: AsRef<str>>(&self, name: S) -> toml::Table {
-		if let Some(conf) = self.auth.table.get(name.as_ref()) {
-			conf.clone()
-		}
-		else {
-			toml::Table::new()
-		}
-	}
-
-	pub fn auths(&self) -> &[String] {
-		&self.auth.using[..]
+	pub fn auth(&self) -> Auth {
+		self.auth.clone()
 	}
 
 	pub fn saver<S: AsRef<str>>(&self, name: S) -> toml::Table {
@@ -222,5 +202,16 @@ impl Config {
 
 	pub fn savers(&self) -> &[String] {
 		&self.saver.using[..]
+	}
+}
+
+impl Auth {
+	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
+		if let Some(table) = self.0.get(name.as_ref()).and_then(|v| v.as_table()) {
+			table.clone()
+		}
+		else {
+			toml::Table::new()
+		}
 	}
 }

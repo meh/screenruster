@@ -29,11 +29,11 @@ pub enum Error {
 	Io(io::Error),
 	Locker(Locker),
 	Grab(Grab),
+	Auth(Auth),
+	Parse,
 
 	#[cfg(feature = "dbus")]
 	DBus(dbus::Error),
-
-	Parse,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -49,6 +49,31 @@ pub enum Grab {
 	Conflict,
 	Frozen,
 	Unmapped,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Auth {
+	UnknownUser,
+
+	#[cfg(feature = "auth-internal")]
+	Internal(auth::Internal),
+
+	#[cfg(feature = "auth-pam")]
+	Pam(auth::Pam),
+}
+
+pub mod auth {
+	#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+	#[cfg(feature = "auth-internal")]
+	pub enum Internal {
+		Creation,
+	}
+
+	#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+	#[cfg(feature = "auth-pam")]
+	pub enum Pam {
+		Creation,
+	}
 }
 
 impl From<io::Error> for Error {
@@ -69,6 +94,25 @@ impl From<Grab> for Error {
 	}
 }
 
+impl From<Auth> for Error {
+	fn from(value: Auth) -> Self {
+		Error::Auth(value)
+	}
+}
+
+#[cfg(feature = "auth-internal")]
+impl From<auth::Internal> for Error {
+	fn from(value: auth::Internal) -> Self {
+		Error::Auth(Auth::Internal(value))
+	}
+}
+
+#[cfg(feature = "auth-pam")]
+impl From<auth::Pam> for Error {
+	fn from(value: auth::Pam) -> Self {
+		Error::Auth(Auth::Pam(value))
+	}
+}
 
 #[cfg(feature = "dbus")]
 impl From<dbus::Error> for Error {
@@ -116,6 +160,23 @@ impl error::Error for Error {
 
 				Grab::Unmapped =>
 					"The grabbing window is not mapped.",
+			},
+
+			Error::Auth(ref err) => match *err {
+				Auth::UnknownUser =>
+					"Unknown user.",
+
+				#[cfg(feature = "auth-internal")]
+				Auth::Internal(ref err) => match *err {
+					auth::Internal::Creation =>
+						"Internal authenticator creation error.",
+				},
+
+				#[cfg(feature = "auth-pam")]
+				Auth::Pam(ref err) => match *err {
+					auth::Pam::Creation =>
+						"PAM authenticator creation error.",
+				},
 			},
 
 			Error::Parse =>
