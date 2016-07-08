@@ -121,6 +121,8 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					// On system activity.
 					locker::Response::Activity => {
+						timer.reset(timer::Event::Blank);
+
 						// If the screen is blanked, unblank it.
 						if blanked {
 							locker.power(true).unwrap();
@@ -136,7 +138,6 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							}
 						}
 						else {
-							timer.reset(timer::Event::Blank);
 							timer.reset(timer::Event::Idle);
 						}
 					}

@@ -95,10 +95,8 @@ impl Timer {
 						}
 
 						Request::Reset(Event::Blank) => {
-							if started.is_some() {
-								blanked   = None;
-								unblanked = Some(Instant::now());
-							}
+							blanked   = None;
+							unblanked = Some(Instant::now());
 						}
 
 						Request::Restart => {
