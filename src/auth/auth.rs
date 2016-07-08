@@ -58,6 +58,13 @@ impl Auth {
 			'main: while let Ok(request) = receiver.recv() {
 				match request {
 					Request::Authenticate(password) => {
+						if methods.is_empty() {
+							warn!("no authentication method");
+
+							sender.send(Response::Success).unwrap();
+							continue 'main;
+						}
+
 						for method in &mut methods {
 							if let Ok(true) = method.authenticate(&user, &password) {
 								sender.send(Response::Success).unwrap();
