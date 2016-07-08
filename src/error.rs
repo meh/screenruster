@@ -51,7 +51,7 @@ pub enum Grab {
 	Unmapped,
 }
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum Auth {
 	UnknownUser,
 
@@ -63,17 +63,18 @@ pub enum Auth {
 }
 
 pub mod auth {
-	#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+	#[cfg(feature = "auth-pam")]
+	use pam;
+
+	#[derive(Clone, Debug)]
 	#[cfg(feature = "auth-internal")]
 	pub enum Internal {
-		Creation,
+		MissingPassword,
 	}
 
-	#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+	#[derive(Clone, Debug)]
 	#[cfg(feature = "auth-pam")]
-	pub enum Pam {
-		Creation,
-	}
+	pub struct Pam(pub pam::PamReturnCode);
 }
 
 impl From<io::Error> for Error {
@@ -168,15 +169,13 @@ impl error::Error for Error {
 
 				#[cfg(feature = "auth-internal")]
 				Auth::Internal(ref err) => match *err {
-					auth::Internal::Creation =>
-						"Internal authenticator creation error.",
+					auth::Internal::MissingPassword =>
+						"Missing internal password.",
 				},
 
 				#[cfg(feature = "auth-pam")]
-				Auth::Pam(ref err) => match *err {
-					auth::Pam::Creation =>
-						"PAM authenticator creation error.",
-				},
+				Auth::Pam(auth::Pam(_code)) =>
+					"PAM error.",
 			},
 
 			Error::Parse =>

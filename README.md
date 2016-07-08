@@ -117,6 +117,31 @@ saver started its rendering, it tells the daemon it can show the window.
 The stopped response is sent after a `stop` request has been received and the
 saver stopped its rendering, it tells the daemon it can hide the window.
 
+Authorization
+=============
+There are various authorization modules.
+
+Internal
+--------
+The internal module uses a password specified in the configuration file.
+
+```toml
+[auth.internal]
+password = "password"
+```
+
+PAM
+---
+The PAM module uses the Pluggable Authentication Module, you will need to
+install a configuration file for it in `/etc/pam.d/screenruster`.
+
+```config
+auth	include		system-auth
+```
+
+If you want PAM account management to be respected, make sure to build with the
+`auth-pam-accounts` feature.
+
 Available savers
 ================
 Tthis is a list of available screen savers that will be updated over time, if

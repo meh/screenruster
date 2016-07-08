@@ -32,7 +32,7 @@ extern crate users;
 extern crate dbus;
 
 #[cfg(feature = "auth-pam")]
-extern crate pam_auth as pam;
+extern crate pam_sys as pam;
 
 extern crate libc;
 extern crate x11;

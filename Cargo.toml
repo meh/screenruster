@@ -28,12 +28,18 @@ screenruster-saver = { git = "https://github.com/meh/screenruster-saver" }
 version  = "0.3"
 optional = true
 
-[dependencies.pam-auth]
+[dependencies.pam-sys]
 version = "0.4"
 optional = true
 
 [features]
-default = ["auth-internal", "auth-pam"]
+default = ["auth-pam"]
 
+# Internal authorization support.
 auth-internal = []
-auth-pam      = ["pam-auth"]
+
+# PAM authorization support.
+auth-pam = ["pam-sys"]
+
+# Respect PAM account management.
+auth-pam-accounts = ["auth-pam"]
