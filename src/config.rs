@@ -89,7 +89,7 @@ impl Config {
 		}
 		else {
 			xdg::BaseDirectories::with_prefix("screenruster").unwrap()
-				.place_config_file("config.config").unwrap()
+				.place_config_file("config.toml").unwrap()
 		};
 
 		let table = if let Ok(mut file) = File::open(path) {
