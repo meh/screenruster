@@ -71,12 +71,13 @@ impl Authenticate for Auth {
 
 			if self.accounts {
 				pam!(handle, pam::acct_mgmt(handle, pam::PamFlag::NONE))?;
+				pam!(handle, pam::setcred(handle, pam::PamFlag::REINITIALIZE_CRED))?;
 			}
 			else {
 				pam::acct_mgmt(handle, pam::PamFlag::NONE);
 			}
 
-			let _ = pam!(handle, pam::setcred(handle, pam::PamFlag::REINITIALIZE_CRED));
+			pam!(handle);
 
 			Ok(true)
 		}
