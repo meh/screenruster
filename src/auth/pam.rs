@@ -59,7 +59,7 @@ impl Authenticate for Auth {
 		let password = CString::new(password).unwrap();
 
 		unsafe {
-			let mut handle = mem::zeroed();
+			let mut handle = mem::uninitialized();
 			let     conv   = pam::PamConversation {
 				conv:     Some(conversation),
 				data_ptr: &Info { user: user.as_ptr(), password: password.as_ptr() } as *const _ as *mut _,
