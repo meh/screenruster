@@ -74,7 +74,7 @@ impl Locker {
 			let mut event    = mem::zeroed(): xlib::XEvent;
 
 			let display = Display::open(config.locker())?;
-			xlib::XSetScreenSaver(display.id, 0, 0, 0, 0);
+			xlib::XSetScreenSaver(display.id, 0, 0, 0, xlib::AllowExposures);
 
 			for screen in 0 .. xlib::XScreenCount(display.id) {
 				let window = Window::create(display.clone(), screen)?;
