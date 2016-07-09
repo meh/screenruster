@@ -158,7 +158,7 @@ impl Locker {
 								}
 
 								Request::Lock => {
-
+									password = String::new();
 								}
 
 								Request::Auth(state) => {
@@ -168,6 +168,8 @@ impl Locker {
 								}
 
 								Request::Stop => {
+									password = String::new();
+
 									for window in windows.values_mut() {
 										let mut has_saver = false;
 
