@@ -7,7 +7,7 @@ license = "GPLv3"
 
 description = "X11 screen saver and locker."
 repository  = "https://github.com/meh/screenruster"
-keywords    = ["x11", "screensaver"]
+keywords    = ["x11", "graphics"]
 
 [dependencies]
 log        = "0.3"
@@ -20,10 +20,9 @@ rand  = "0.3"
 users = "0.5"
 dbus  = "0.3"
 
-libc = "0.2"
-x11  = { version = "2", git = "https://github.com/meh/x11-rs", branch = "dpms", features = ["xlib", "glx", "xrandr", "dpms"] }
-
-screenruster-saver = { git = "https://github.com/meh/screenruster-saver" }
+libc               = "0.2"
+x11                = { version = "2", git = "https://github.com/Daggerbot/x11-rs", features = ["xlib", "glx", "xrandr", "dpms"] }
+screenruster-saver = "0.1.0"
 
 [dependencies.pam-sys]
 version = "0.4"
