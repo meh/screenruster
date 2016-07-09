@@ -66,7 +66,7 @@ fn main() {
 	env_logger::init().unwrap();
 
 	let matches = App::new("screenruster")
-		.version("0.1")
+		.version(env!("CARGO_PKG_VERSION"))
 		.author("meh. <meh@schizofreni.co>")
 		.arg(Arg::with_name("config")
 			.short("c")
@@ -74,20 +74,59 @@ fn main() {
 			.help("Sets a custom configuration file.")
 			.takes_value(true))
 		.subcommand(SubCommand::with_name("lock")
-			.about("Lock the screen.")
-			.version("0.1"))
+			.about("Lock the screen."))
+		.subcommand(SubCommand::with_name("activate")
+			.about("Activate the screen saver."))
+		.subcommand(SubCommand::with_name("deactivate")
+			.about("Deactivate the screen saver like there was user input."))
 		.get_matches();
 
 	let config = Config::load(&matches).unwrap();
 
 	if let Some(submatches) = matches.subcommand_matches("lock") {
-		return lock(submatches.clone(), config).unwrap();
+		lock(submatches.clone(), config).unwrap();
 	}
-
-	server(matches, config).unwrap()
+	else if let Some(submatches) = matches.subcommand_matches("activate") {
+		activate(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("deactivate") {
+		deactivate(submatches.clone(), config).unwrap();
+	}
+	else {
+		server(matches.clone(), config).unwrap();
+	}
 }
 
 fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Lock")?)?;
+
+	Ok(())
+}
+
+fn activate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"SetActive")?.append1(true))?;
+
+	Ok(())
+}
+
+fn deactivate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"SimulateUserActivity")?)?;
+
 	Ok(())
 }
 

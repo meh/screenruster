@@ -26,12 +26,14 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
 	Io(io::Error),
+	Message(String),
+	Unknown,
+	Parse,
+
 	Locker(Locker),
 	Grab(Grab),
 	Auth(Auth),
 	DBus(dbus::Error),
-
-	Parse,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -80,6 +82,19 @@ impl From<io::Error> for Error {
 		Error::Io(value)
 	}
 }
+
+impl From<String> for Error {
+	fn from(value: String) -> Self {
+		Error::Message(value)
+	}
+}
+
+impl From<()> for Error {
+	fn from(_value: ()) -> Self {
+		Error::Unknown
+	}
+}
+
 
 impl From<Locker> for Error {
 	fn from(value: Locker) -> Self {
@@ -131,6 +146,15 @@ impl error::Error for Error {
 			Error::Io(ref err) =>
 				err.description(),
 
+			Error::Message(ref msg) =>
+				msg.as_ref(),
+
+			Error::Unknown =>
+				"Unknown error.",
+
+			Error::Parse =>
+				"Parse error.",
+
 			Error::DBus(ref err) =>
 				err.description(),
 
@@ -174,8 +198,6 @@ impl error::Error for Error {
 					"PAM error.",
 			},
 
-			Error::Parse =>
-				"Parse error.",
 		}
 	}
 }
