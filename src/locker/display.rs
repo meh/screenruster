@@ -185,7 +185,6 @@ impl Display {
 					&mut kind, &mut format, &mut count, &mut after, &mut values);
 
 				if kind == xlib::XA_CARDINAL {
-					debug!("not observing our own window");
 					return;
 				}
 			}
