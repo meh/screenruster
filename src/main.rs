@@ -213,14 +213,16 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-
 fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
+	use std::time::Instant;
 	use std::collections::HashSet;
 	use rand::{self, Rng};
 
 	const GET_ACTIVE_TIME:       u64 = 1;
 	const GET_SESSION_IDLE:      u64 = 2;
 	const GET_SESSION_IDLE_TIME: u64 = 3;
+
+	const ACTIVATION: u64 = 1;
 
 	fn insert(set: &mut HashSet<u32>) -> u32 {
 		loop {
@@ -247,9 +249,9 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let s = server.as_ref();
 	let t = timer.as_ref();
 
-	let mut locked  = false;
-	let mut started = false;
-	let mut blanked = false;
+	let mut locked  = None: Option<Instant>;
+	let mut started = None: Option<Instant>;
+	let mut blanked = None: Option<Instant>;
 
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
@@ -269,16 +271,16 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						timer.reset(timer::Event::Blank).unwrap();
 
 						// If the screen is blanked, unblank it.
-						if blanked {
+						if blanked.is_some() {
 							locker.power(true).unwrap();
-							blanked = false;
+							blanked = None;
 						}
 
 						// If the saver has started but the screen is not locked, unlock
 						// it, otherwise just reset the timers.
-						if started {
-							if !locked {
-								started = false;
+						if let Some(at) = started {
+							if locked.is_none() && at.elapsed().as_secs() >= ACTIVATION {
+								started = None;
 								locker.stop().unwrap();
 							}
 						}
@@ -295,8 +297,8 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					auth::Response::Success => {
 						info!("authorization: success");
 
-						locked  = false;
-						started = false;
+						locked  = None;
+						started = None;
 
 						locker.auth(true).unwrap();
 						locker.stop().unwrap();
@@ -315,13 +317,13 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			event = s.recv() => {
 				match event.unwrap() {
 					server::Request::Lock => {
-						if !started {
-							started = true;
+						if started.is_none() {
+							started = Some(Instant::now());
 							locker.start().unwrap();
 						}
 
-						if !locked {
-							locked = true;
+						if locked.is_none() {
+							locked = Some(Instant::now());
 							locker.lock().unwrap();
 						}
 					}
@@ -350,19 +352,22 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::SetActive(active) => {
-						if active && !started {
-							started = true;
-							locker.start().unwrap();
+						if active {
+							if started.is_none() {
+								started = Some(Instant::now());
+								locker.start().unwrap();
+							}
 						}
-
-						if !active && started && !locked {
-							started = false;
-							locker.stop().unwrap();
+						else {
+							if started.is_some() && locked.is_none() {
+								started = None;
+								locker.stop().unwrap();
+							}
 						}
 					}
 
 					server::Request::GetActive => {
-						server.response(server::Response::Active(started)).unwrap();
+						server.response(server::Response::Active(started.is_some())).unwrap();
 					}
 
 					server::Request::GetActiveTime => {
@@ -403,7 +408,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					timer::Response::Start => {
 						if inhibitors.is_empty() {
-							started = true;
+							started = Some(Instant::now());
 							locker.start().unwrap();
 						}
 						else {
@@ -412,14 +417,14 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					timer::Response::Lock => {
-						locked = true;
+						locked = Some(Instant::now());
 						locker.lock().unwrap();
 					}
 
 					timer::Response::Blank => {
 						if inhibitors.is_empty() {
 							locker.power(false).unwrap();
-							blanked = true;
+							blanked = Some(Instant::now());
 						}
 						else {
 							timer.reset(timer::Event::Blank).unwrap();
