@@ -17,7 +17,7 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use toml;
 use clap::ArgMatches;
@@ -55,7 +55,15 @@ impl Default for Timer {
 
 #[derive(Clone, Debug)]
 pub struct Server {
+	pub ignore: HashSet<String>,
+}
 
+impl Default for Server {
+	fn default() -> Server {
+		Server {
+			ignore: HashSet::new(),
+		}
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -128,7 +136,15 @@ impl Config {
 			},
 
 			server: {
-				Server { }
+				let mut config = Server::default();
+
+				if let Some(table) = table.get("server").and_then(|v| v.as_table()) {
+					if let Some(array) = table.get("ignore").and_then(|v| v.as_slice()) {
+						config.ignore = array.iter().filter(|v| v.as_str().is_some()).map(|v| v.as_str().unwrap().to_string()).collect();
+					}
+				}
+
+				config
 			},
 
 			locker: {

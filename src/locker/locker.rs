@@ -51,6 +51,7 @@ pub struct Locker {
 #[derive(Clone)]
 pub enum Request {
 	Sanitize,
+	Activity,
 	Power(bool),
 
 	Start,
@@ -120,6 +121,10 @@ impl Locker {
 									for window in windows.values_mut() {
 										window.sanitize();
 									}
+								}
+
+								Request::Activity => {
+									sender.send(Response::Activity).unwrap();
 								}
 
 								Request::Power(value) => {
@@ -344,13 +349,11 @@ impl Locker {
 							}
 
 							// On window changes, try to observe the window.
-							xlib::MapNotify | xlib::UnmapNotify | xlib::ConfigureNotify => {
+							xlib::MapNotify | xlib::ConfigureNotify => {
 								display.observe(any.window);
 							}
 
-							event => {
-								debug!("event for {}: {}", any.window, event);
-							}
+							_ => ()
 						}
 					}
 				});
@@ -386,6 +389,10 @@ impl Locker {
 
 	pub fn power(&self, value: bool) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Power(value))
+	}
+
+	pub fn activity(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Activity)
 	}
 }
 

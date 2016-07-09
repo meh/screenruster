@@ -1,6 +1,9 @@
+[server]
+ignore = ["throttle", "inhibit"]
+
 [timer]
 beat    = 10
-timeout = 1
+timeout = 360
 lock    = 0
 cycle   = false
 blank   = false

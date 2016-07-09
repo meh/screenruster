@@ -16,7 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::thread;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::time::{Instant, Duration};
 
 use error;
@@ -31,7 +31,9 @@ pub struct Timer {
 pub enum Request {
 	Reset(Event),
 	Restart,
-	Report,
+	Report {
+		id: u64,
+	}
 }
 
 #[derive(Clone, Debug)]
@@ -49,6 +51,7 @@ pub enum Response {
 	Blank,
 
 	Report {
+		id:        u64,
 		beat:      Instant,
 		idle:      Instant,
 		started:   Option<Instant>,
@@ -109,8 +112,9 @@ impl Timer {
 							}
 						}
 
-						Request::Report => {
+						Request::Report { id } => {
 							sender.send(Response::Report {
+								id:        id,
 								beat:      beat,
 								idle:      idle,
 								started:   started,
@@ -170,12 +174,16 @@ impl Timer {
 		})
 	}
 
-	pub fn reset(&self, event: Event) {
-		self.sender.send(Request::Reset(event)).unwrap();
+	pub fn reset(&self, event: Event) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Reset(event))
 	}
 
-	pub fn restart(&self) {
-		self.sender.send(Request::Restart).unwrap();
+	pub fn restart(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Restart)
+	}
+
+	pub fn report(&self, id: u64) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Report { id: id })
 	}
 }
 

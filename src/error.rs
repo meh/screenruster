@@ -19,7 +19,6 @@ use std::fmt;
 use std::error;
 use std::io;
 
-#[cfg(feature = "dbus")]
 use dbus;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
@@ -30,10 +29,9 @@ pub enum Error {
 	Locker(Locker),
 	Grab(Grab),
 	Auth(Auth),
-	Parse,
-
-	#[cfg(feature = "dbus")]
 	DBus(dbus::Error),
+
+	Parse,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -115,7 +113,6 @@ impl From<auth::Pam> for Error {
 	}
 }
 
-#[cfg(feature = "dbus")]
 impl From<dbus::Error> for Error {
 	fn from(value: dbus::Error) -> Self {
 		Error::DBus(value)
@@ -134,7 +131,6 @@ impl error::Error for Error {
 			Error::Io(ref err) =>
 				err.description(),
 
-			#[cfg(feature = "dbus")]
 			Error::DBus(ref err) =>
 				err.description(),
 

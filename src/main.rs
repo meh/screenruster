@@ -27,8 +27,6 @@ extern crate xdg;
 extern crate toml;
 extern crate rand;
 extern crate users;
-
-#[cfg(feature = "dbus")]
 extern crate dbus;
 
 #[cfg(feature = "auth-pam")]
@@ -94,6 +92,12 @@ fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 }
 
 fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
+	use std::collections::HashSet;
+
+	const GET_ACTIVE_TIME:       u64 = 1;
+	const GET_SESSION_IDLE:      u64 = 2;
+	const GET_SESSION_IDLE_TIME: u64 = 3;
+
 	let timer  = Timer::spawn(config.timer())?;
 	let auth   = Auth::spawn(config.auth())?;
 	let server = Server::spawn(config.server())?;
@@ -109,6 +113,10 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let mut started = false;
 	let mut blanked = false;
 
+	let mut cookie     = 0;
+	let mut inhibitors = HashSet::new();
+	let mut throttlers = HashSet::new();
+
 	loop {
 		select! {
 			// Locker events.
@@ -121,7 +129,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					// On system activity.
 					locker::Response::Activity => {
-						timer.reset(timer::Event::Blank);
+						timer.reset(timer::Event::Blank).unwrap();
 
 						// If the screen is blanked, unblank it.
 						if blanked {
@@ -138,7 +146,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							}
 						}
 						else {
-							timer.reset(timer::Event::Idle);
+							timer.reset(timer::Event::Idle).unwrap();
 						}
 					}
 				}
@@ -155,7 +163,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 						locker.auth(true).unwrap();
 						locker.stop().unwrap();
-						timer.restart();
+						timer.restart().unwrap();
 					}
 
 					auth::Response::Failure => {
@@ -169,8 +177,71 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			// DBus events.
 			event = s.recv() => {
 				match event.unwrap() {
-					event => {
-						info!("dbus: {:?}", event);
+					server::Request::Lock => {
+						if !started {
+							started = true;
+							locker.start().unwrap();
+						}
+
+						if !locked {
+							locked = true;
+							locker.lock().unwrap();
+						}
+					}
+
+					// Cycle is unsupported.
+					server::Request::Cycle => (),
+
+					server::Request::SimulateUserActivity => {
+						locker.activity().unwrap();
+					}
+
+					server::Request::Inhibit { .. } => {
+						cookie += 1;
+						inhibitors.insert(cookie);
+						server.response(server::Response::Inhibit(cookie)).unwrap();
+					}
+
+					server::Request::UnInhibit(cookie) => {
+						inhibitors.remove(&cookie);
+					}
+
+					server::Request::Throttle { .. } => {
+						cookie += 1;
+						throttlers.insert(cookie);
+						server.response(server::Response::Throttle(cookie)).unwrap();
+					}
+
+					server::Request::UnThrottle(cookie) => {
+						throttlers.remove(&cookie);
+					}
+
+					server::Request::SetActive(active) => {
+						if active && !started {
+							started = true;
+							locker.start().unwrap();
+						}
+
+						if !active && started && !locked {
+							started = false;
+							locker.stop().unwrap();
+						}
+					}
+
+					server::Request::GetActive => {
+						server.response(server::Response::Active(started)).unwrap();
+					}
+
+					server::Request::GetActiveTime => {
+						timer.report(GET_ACTIVE_TIME).unwrap();
+					}
+
+					server::Request::GetSessionIdle => {
+						timer.report(GET_SESSION_IDLE).unwrap();
+					}
+
+					server::Request::GetSessionIdleTime => {
+						timer.report(GET_SESSION_IDLE_TIME).unwrap();
 					}
 				}
 			},
@@ -178,6 +249,19 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			// Timer events.
 			event = t.recv() => {
 				match event.unwrap() {
+					timer::Response::Report { id: GET_ACTIVE_TIME, started, .. } => {
+						server.response(server::Response::ActiveTime(started.map_or(0, |i| i.elapsed().as_secs()))).unwrap();
+					}
+
+					timer::Response::Report { id: GET_SESSION_IDLE, idle, .. } => {
+						server.response(server::Response::SessionIdle(idle.elapsed().as_secs() >= 5)).unwrap();
+					}
+
+					timer::Response::Report { id: GET_SESSION_IDLE_TIME, idle, .. } => {
+						server.response(server::Response::SessionIdleTime(idle.elapsed().as_secs())).unwrap();
+					}
+
+					// Unknown report.
 					timer::Response::Report { .. } => (),
 
 					timer::Response::Heartbeat => {
@@ -185,8 +269,13 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					timer::Response::Start => {
-						started = true;
-						locker.start().unwrap();
+						if inhibitors.is_empty() {
+							started = true;
+							locker.start().unwrap();
+						}
+						else {
+							timer.reset(timer::Event::Idle).unwrap();
+						}
 					}
 
 					timer::Response::Lock => {
@@ -195,8 +284,13 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					timer::Response::Blank => {
-						locker.power(false).unwrap();
-						blanked = true;
+						if inhibitors.is_empty() {
+							locker.power(false).unwrap();
+							blanked = true;
+						}
+						else {
+							timer.reset(timer::Event::Blank).unwrap();
+						}
 					}
 				}
 			}
