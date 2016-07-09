@@ -88,8 +88,8 @@ impl Server {
 			let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
 			let end    = Arc::new(f.signal("AuthenticationRequestEnd"));
 
-			let tree = f.tree().add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(
-				f.interface("org.gnome.ScreenSaver")
+			let tree = f.tree()
+				.add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
 					.add_m(f.method("Lock", |_, _, _| {
 						sender.send(Request::Lock).unwrap();
 
