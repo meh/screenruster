@@ -79,6 +79,22 @@ fn main() {
 			.about("Activate the screen saver."))
 		.subcommand(SubCommand::with_name("deactivate")
 			.about("Deactivate the screen saver like there was user input."))
+		.subcommand(SubCommand::with_name("inhibit")
+			.about("Inhibit the screen saver until uninhibit is called."))
+		.subcommand(SubCommand::with_name("uninhibit")
+			.about("Uninhibit a previous inhibition.")
+			.arg(Arg::with_name("COOKIE")
+				.required(true)
+				.index(1)
+				.help("The previously returned cookie.")))
+		.subcommand(SubCommand::with_name("throttle")
+			.about("Throttle the screen saver until unthrottle is called."))
+		.subcommand(SubCommand::with_name("unthrottle")
+			.about("Unthrottle a previous throttle.")
+			.arg(Arg::with_name("COOKIE")
+				.required(true)
+				.index(1)
+				.help("The previously returned cookie.")))
 		.get_matches();
 
 	let config = Config::load(&matches).unwrap();
@@ -91,6 +107,18 @@ fn main() {
 	}
 	else if let Some(submatches) = matches.subcommand_matches("deactivate") {
 		deactivate(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("inhibit") {
+		inhibit(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("uninhibit") {
+		uninhibit(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("throttle") {
+		throttle(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("unthrottle") {
+		unthrottle(submatches.clone(), config).unwrap();
 	}
 	else {
 		server(matches.clone(), config).unwrap();
@@ -114,7 +142,8 @@ fn activate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 			"org.gnome.ScreenSaver",
 			"/org/gnome/ScreenSaver",
 			"org.gnome.ScreenSaver",
-			"SetActive")?.append1(true))?;
+			"SetActive")?
+				.append1(true))?;
 
 	Ok(())
 }
@@ -129,6 +158,61 @@ fn deactivate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 
 	Ok(())
 }
+
+fn inhibit(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
+		.send_with_reply_and_block(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Inhibit")?
+				.append2("screenruster", "requested by user")
+			, 5_000)?;
+
+	println!("{}", reply.get1::<u32>().unwrap());
+
+	Ok(())
+}
+
+fn uninhibit(matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"UnInhibit")?
+				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
+
+	Ok(())
+}
+
+fn throttle(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
+		.send_with_reply_and_block(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Throttle")?
+				.append2("screenruster", "requested by user")
+			, 5_000)?;
+
+	println!("{}", reply.get1::<u32>().unwrap());
+
+	Ok(())
+}
+
+fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"UnThrottle")?
+				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
+
+	Ok(())
+}
+
 
 fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	use std::collections::HashSet;
