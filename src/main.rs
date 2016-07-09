@@ -132,10 +132,25 @@ fn deactivate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 
 fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	use std::collections::HashSet;
+	use rand::{self, Rng};
 
 	const GET_ACTIVE_TIME:       u64 = 1;
 	const GET_SESSION_IDLE:      u64 = 2;
 	const GET_SESSION_IDLE_TIME: u64 = 3;
+
+	fn insert(set: &mut HashSet<u32>) -> u32 {
+		loop {
+			let cookie = rand::thread_rng().gen();
+
+			if set.contains(&cookie) {
+				continue;
+			}
+
+			set.insert(cookie);
+
+			return cookie;
+		}
+	}
 
 	let timer  = Timer::spawn(config.timer())?;
 	let auth   = Auth::spawn(config.auth())?;
@@ -152,7 +167,6 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let mut started = false;
 	let mut blanked = false;
 
-	let mut cookie     = 0;
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
 
@@ -236,9 +250,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Inhibit { .. } => {
-						cookie += 1;
-						inhibitors.insert(cookie);
-						server.response(server::Response::Inhibit(cookie)).unwrap();
+						server.response(server::Response::Inhibit(insert(&mut inhibitors))).unwrap();
 					}
 
 					server::Request::UnInhibit(cookie) => {
@@ -246,9 +258,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Throttle { .. } => {
-						cookie += 1;
-						throttlers.insert(cookie);
-						server.response(server::Response::Throttle(cookie)).unwrap();
+						server.response(server::Response::Throttle(insert(&mut throttlers))).unwrap();
 					}
 
 					server::Request::UnThrottle(cookie) => {
