@@ -16,6 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::thread;
+use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 
 use users;
@@ -89,14 +90,10 @@ impl Auth {
 	}
 }
 
-impl AsRef<Receiver<Response>> for Auth {
-	fn as_ref(&self) -> &Receiver<Response> {
-		&self.receiver
-	}
-}
+impl Deref for Auth {
+	type Target = Receiver<Response>;
 
-impl AsRef<Sender<Request>> for Auth {
-	fn as_ref(&self) -> &Sender<Request> {
-		&self.sender
+	fn deref(&self) -> &Receiver<Response> {
+		&self.receiver
 	}
 }

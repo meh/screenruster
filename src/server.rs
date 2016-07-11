@@ -17,6 +17,7 @@
 
 use std::thread;
 use std::sync::Arc;
+use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 
 use dbus;
@@ -296,20 +297,10 @@ impl Server {
 	}
 }
 
-impl AsRef<Receiver<Request>> for Server {
-	fn as_ref(&self) -> &Receiver<Request> {
+impl Deref for Server {
+	type Target = Receiver<Request>;
+
+	fn deref(&self) -> &Receiver<Request> {
 		&self.receiver
-	}
-}
-
-impl AsRef<Sender<Response>> for Server {
-	fn as_ref(&self) -> &Sender<Response> {
-		&self.sender
-	}
-}
-
-impl AsRef<Sender<Signal>> for Server {
-	fn as_ref(&self) -> &Sender<Signal> {
-		&self.signals
 	}
 }

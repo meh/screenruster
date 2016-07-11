@@ -16,6 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::thread;
+use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::time::{Instant, Duration};
 
@@ -187,14 +188,10 @@ impl Timer {
 	}
 }
 
-impl AsRef<Receiver<Response>> for Timer {
-	fn as_ref(&self) -> &Receiver<Response> {
-		&self.receiver
-	}
-}
+impl Deref for Timer {
+	type Target = Receiver<Response>;
 
-impl AsRef<Sender<Request>> for Timer {
-	fn as_ref(&self) -> &Sender<Request> {
-		&self.sender
+	fn deref(&self) -> &Receiver<Response> {
+		&self.receiver
 	}
 }

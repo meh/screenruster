@@ -121,7 +121,7 @@ fn main() {
 		unthrottle(submatches.clone(), config).unwrap();
 	}
 	else {
-		server(matches.clone(), config).unwrap();
+		daemon(matches.clone(), config).unwrap();
 	}
 }
 
@@ -213,7 +213,7 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
+fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	use std::time::Instant;
 	use std::collections::HashSet;
 	use rand::{self, Rng};
@@ -244,10 +244,10 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let locker = Locker::spawn(config)?;
 
 	// XXX: select! is icky, this works around shadowing the outer name
-	let l = locker.as_ref();
-	let a = auth.as_ref();
-	let s = server.as_ref();
-	let t = timer.as_ref();
+	let l = &*locker;
+	let a = &*auth;
+	let s = &*server;
+	let t = &*timer;
 
 	let mut locked  = None: Option<Instant>;
 	let mut started = None: Option<Instant>;

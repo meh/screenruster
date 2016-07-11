@@ -21,6 +21,7 @@ use std::str;
 use std::collections::{HashSet, HashMap};
 use std::thread;
 use std::time::Duration;
+use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::sync::Arc;
 
@@ -398,14 +399,10 @@ impl Locker {
 	}
 }
 
-impl AsRef<Receiver<Response>> for Locker {
-	fn as_ref(&self) -> &Receiver<Response> {
-		&self.receiver
-	}
-}
+impl Deref for Locker {
+	type Target = Receiver<Response>;
 
-impl AsRef<Sender<Request>> for Locker {
-	fn as_ref(&self) -> &Sender<Request> {
-		&self.sender
+	fn deref(&self) -> &Receiver<Response> {
+		&self.receiver
 	}
 }
