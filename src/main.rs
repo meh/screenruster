@@ -256,6 +256,52 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
 
+	macro_rules! act {
+		(blank) => (
+			blanked = Some(Instant::now());
+			locker.power(false).unwrap();
+		);
+
+		(unblank) => (
+			blanked = None;
+			locker.power(true).unwrap();
+		);
+
+		(start) => (
+			started = Some(Instant::now());
+			locker.start().unwrap();
+			server.signal(server::Signal::Active(true)).unwrap();
+		);
+
+		(lock) => (
+			locked = Some(Instant::now());
+			locker.lock().unwrap();
+		);
+
+		(stop) => (
+			started = None;
+			locked  = None;
+			locker.stop().unwrap();
+			timer.restart().unwrap();
+			server.signal(server::Signal::Active(false)).unwrap();
+		);
+
+		(auth < $value:expr) => (
+			server.signal(server::Signal::AuthenticationRequest(true)).unwrap();
+			auth.authenticate($value).unwrap();
+		);
+
+		(auth success) => (
+			locker.auth(true).unwrap();
+			server.signal(server::Signal::AuthenticationRequest(false)).unwrap();
+		);
+
+		(auth failure) => (
+			locker.auth(false).unwrap();
+			server.signal(server::Signal::AuthenticationRequest(false)).unwrap();
+		);
+	}
+
 	loop {
 		select! {
 			// Locker events.
@@ -263,7 +309,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 				match event.unwrap() {
 					// Try authorization.
 					locker::Response::Password(pwd) => {
-						auth.authenticate(pwd).unwrap();
+						act!(auth < pwd);
 					}
 
 					// On system activity.
@@ -272,16 +318,14 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 						// If the screen is blanked, unblank it.
 						if blanked.is_some() {
-							locker.power(true).unwrap();
-							blanked = None;
+							act!(unblank);
 						}
 
 						// If the saver has started but the screen is not locked, unlock
 						// it, otherwise just reset the timers.
 						if let Some(at) = started {
 							if locked.is_none() && at.elapsed().as_secs() >= ACTIVATION {
-								started = None;
-								locker.stop().unwrap();
+								act!(stop);
 							}
 						}
 						else {
@@ -297,18 +341,14 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					auth::Response::Success => {
 						info!("authorization: success");
 
-						locked  = None;
-						started = None;
-
-						locker.auth(true).unwrap();
-						locker.stop().unwrap();
-						timer.restart().unwrap();
+						act!(auth success);
+						act!(stop);
 					}
 
 					auth::Response::Failure => {
 						info!("authorization: failure");
 
-						locker.auth(false).unwrap();
+						act!(auth failure);
 					}
 				}
 			},
@@ -318,13 +358,11 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 				match event.unwrap() {
 					server::Request::Lock => {
 						if started.is_none() {
-							started = Some(Instant::now());
-							locker.start().unwrap();
+							act!(start);
 						}
 
 						if locked.is_none() {
-							locked = Some(Instant::now());
-							locker.lock().unwrap();
+							act!(lock);
 						}
 					}
 
@@ -354,14 +392,12 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					server::Request::SetActive(active) => {
 						if active {
 							if started.is_none() {
-								started = Some(Instant::now());
-								locker.start().unwrap();
+								act!(start);
 							}
 						}
 						else {
 							if started.is_some() && locked.is_none() {
-								started = None;
-								locker.stop().unwrap();
+								act!(stop);
 							}
 						}
 					}
@@ -408,8 +444,7 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					timer::Response::Start => {
 						if inhibitors.is_empty() {
-							started = Some(Instant::now());
-							locker.start().unwrap();
+							act!(start);
 						}
 						else {
 							timer.reset(timer::Event::Idle).unwrap();
@@ -417,14 +452,12 @@ fn server(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					timer::Response::Lock => {
-						locked = Some(Instant::now());
-						locker.lock().unwrap();
+						act!(lock);
 					}
 
 					timer::Response::Blank => {
 						if inhibitors.is_empty() {
-							locker.power(false).unwrap();
-							blanked = Some(Instant::now());
+							act!(blank);
 						}
 						else {
 							timer.reset(timer::Event::Blank).unwrap();
