@@ -59,6 +59,27 @@ impl Extension {
 	}
 }
 
+unsafe extern "C" fn ignore(_display: *mut xlib::Display, _error: *mut xlib::XErrorEvent) -> c_int {
+	0
+}
+
+unsafe extern "C" fn report(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
+	let mut buffer = [0i8; 1024];
+
+	xlib::XGetErrorText(display, (*error).error_code as c_int, buffer.as_mut_ptr(), 1024);
+
+	error!("X11: display={:?} id={:?} serial={:?} code={:?} request={:?} minor={:?} error={:?}",
+		CStr::from_ptr(xlib::XDisplayString(display)).to_str().unwrap(),
+		(*error).resourceid,
+		(*error).serial,
+		(*error).error_code,
+		(*error).request_code,
+		(*error).minor_code,
+		CStr::from_ptr(buffer.as_ptr()).to_str().unwrap());
+
+	0
+}
+
 impl Display {
 	/// Open the default display.
 	pub fn open(config: config::Locker) -> error::Result<Arc<Display>> {
@@ -69,6 +90,8 @@ impl Display {
 			else {
 				xlib::XOpenDisplay(ptr::null())
 			}.as_mut().ok_or(error::Locker::Display)?;
+
+			xlib::XSetErrorHandler(Some(report));
 
 			Ok(Arc::new(Display {
 				id: id,
@@ -163,10 +186,6 @@ impl Display {
 
 	/// Observe events on the given window and all its children.
 	pub fn observe(&self, window: xlib::Window) {
-		unsafe extern "C" fn ignore(_display: *mut xlib::Display, _error: *mut xlib::XErrorEvent) -> c_int {
-			0
-		}
-
 		unsafe {
 			let old = xlib::XSetErrorHandler(Some(ignore));
 			self._observe(window);
