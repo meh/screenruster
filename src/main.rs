@@ -218,10 +218,13 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	use std::collections::HashSet;
 	use rand::{self, Rng};
 
+	// Timer report IDs.
 	const GET_ACTIVE_TIME:       u64 = 1;
 	const GET_SESSION_IDLE:      u64 = 2;
 	const GET_SESSION_IDLE_TIME: u64 = 3;
 
+	// How many seconds to wait before acting on an Activity after one was
+	// already acted upon.
 	const ACTIVATION: u64 = 1;
 
 	fn insert(set: &mut HashSet<u32>) -> u32 {
@@ -242,12 +245,6 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let auth   = Auth::spawn(config.auth())?;
 	let server = Server::spawn(config.server())?;
 	let locker = Locker::spawn(config)?;
-
-	// XXX: select! is icky, this works around shadowing the outer name
-	let l = &*locker;
-	let a = &*auth;
-	let s = &*server;
-	let t = &*timer;
 
 	let mut locked  = None: Option<Instant>;
 	let mut started = None: Option<Instant>;
@@ -302,6 +299,12 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 		);
 	}
 
+	// XXX: select! is icky, this works around shadowing the outer name
+	let l = &*locker;
+	let a = &*auth;
+	let s = &*server;
+	let t = &*timer;
+
 	loop {
 		select! {
 			// Locker events.
@@ -314,9 +317,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					// On system activity.
 					locker::Response::Activity => {
+						// Always reset the blank timer.
 						timer.reset(timer::Event::Blank).unwrap();
 
-						// If the screen is blanked, unblank it.
 						if blanked.is_some() {
 							act!(unblank);
 						}
@@ -435,8 +438,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						server.response(server::Response::SessionIdleTime(idle.elapsed().as_secs())).unwrap();
 					}
 
-					// Unknown report.
-					timer::Response::Report { .. } => (),
+					timer::Response::Report { .. } => {
+						unreachable!();
+					}
 
 					timer::Response::Heartbeat => {
 						locker.sanitize().unwrap();
