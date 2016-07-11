@@ -27,6 +27,7 @@ use config;
 pub struct Server {
 	receiver: Receiver<Request>,
 	sender:   Sender<Response>,
+	signals:  Sender<Signal>,
 }
 
 #[derive(Debug)]
@@ -72,10 +73,18 @@ pub enum Response {
 	SessionIdleTime(u64),
 }
 
+#[derive(Debug)]
+pub enum Signal {
+	Active(bool),
+	SessionIdle(bool),
+	AuthenticationRequest(bool),
+}
+
 impl Server {
 	pub fn spawn(config: config::Server) -> error::Result<Server> {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
+		let (s_sender, signals)  = channel();
 
 		thread::spawn(move || {
 			let c = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
@@ -217,7 +226,6 @@ impl Server {
 						}
 					}).outarg::<u64, _>("time"))
 
-
 					.add_m(f.method("GetSessionIdle", |m, _, _| {
 						sender.send(Request::GetSessionIdle).unwrap();
 
@@ -246,17 +254,45 @@ impl Server {
 					.add_s_arc(end.clone())));
 
 			tree.set_registered(&c, true).unwrap();
-			for _ in tree.run(&c, c.iter(1_000_000)) { }
+
+			for item in tree.run(&c, c.iter(100)) {
+				if let dbus::ConnectionItem::Nothing = item {
+					while let Ok(signal) = signals.try_recv() {
+						c.send(match signal {
+							Signal::Active(status) => {
+								active.msg().append1(status)
+							}
+
+							Signal::SessionIdle(status) => {
+								idle.msg().append1(status)
+							}
+
+							Signal::AuthenticationRequest(true) => {
+								begin.msg()
+							}
+
+							Signal::AuthenticationRequest(false) => {
+								end.msg()
+							}
+						}).unwrap();
+					}
+				}
+			}
 		});
 
 		Ok(Server {
 			receiver: i_receiver,
 			sender:   i_sender,
+			signals:  s_sender,
 		})
 	}
 
 	pub fn response(&self, value: Response) -> Result<(), SendError<Response>> {
 		self.sender.send(value)
+	}
+
+	pub fn signal(&self, value: Signal) -> Result<(), SendError<Signal>> {
+		self.signals.send(value)
 	}
 }
 
@@ -269,5 +305,11 @@ impl AsRef<Receiver<Request>> for Server {
 impl AsRef<Sender<Response>> for Server {
 	fn as_ref(&self) -> &Sender<Response> {
 		&self.sender
+	}
+}
+
+impl AsRef<Sender<Signal>> for Server {
+	fn as_ref(&self) -> &Sender<Signal> {
+		&self.signals
 	}
 }
