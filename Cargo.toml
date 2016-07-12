@@ -21,7 +21,7 @@ users = "0.5"
 dbus  = "0.3"
 
 libc               = "0.2"
-x11                = { version = "2", git = "https://github.com/Daggerbot/x11-rs", features = ["xlib", "glx", "xrandr", "dpms"] }
+x11                = { version = "2", features = ["xlib", "glx", "xrandr", "dpms"] }
 screenruster-saver = "0.1.0"
 
 [dependencies.pam-sys]
