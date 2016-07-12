@@ -1,6 +1,6 @@
 [package]
 name    = "screenruster"
-version = "0.1.1-dev"
+version = "0.1.1"
 
 authors = ["meh. <meh@schizofreni.co>"]
 license = "GPL-3.0"
@@ -22,7 +22,7 @@ dbus  = "0.3"
 
 libc               = "0.2"
 x11                = { version = "2", features = ["xlib", "glx", "xrandr", "dpms"] }
-screenruster-saver = "0.1.0"
+screenruster-saver = "0.1"
 
 [dependencies.pam-sys]
 version = "0.4"
