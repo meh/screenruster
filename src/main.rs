@@ -241,9 +241,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 		}
 	}
 
-	let timer  = Timer::spawn(config.timer())?;
-	let auth   = Auth::spawn(config.auth())?;
-	let server = Server::spawn(config.server())?;
+	let timer  = Timer::spawn(config.timer().clone())?;
+	let auth   = Auth::spawn(config.auth().clone())?;
+	let server = Server::spawn(config.server().clone())?;
 	let locker = Locker::spawn(config)?;
 
 	let mut locked  = None: Option<Instant>;

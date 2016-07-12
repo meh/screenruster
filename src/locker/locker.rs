@@ -128,13 +128,13 @@ impl Locker {
 									for window in windows.values_mut() {
 										let mut has_saver = false;
 
-										if !config.savers().is_empty() {
-											let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
+										if !config.saver().using().is_empty() {
+											let name = config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
 											if let Ok(mut saver) = Saver::spawn(name) {
 												has_saver = true;
 
-												saver.config(config.saver(name)).unwrap();
+												saver.config(config.saver().get(name)).unwrap();
 												saver.target(display.name(), window.screen, window.id).unwrap();
 												savers.insert(window.id, saver);
 											}

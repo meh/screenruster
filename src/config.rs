@@ -17,7 +17,7 @@
 
 use std::fs::File;
 use std::io::Read;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use toml;
 use clap::ArgMatches;
@@ -85,10 +85,7 @@ impl Default for Locker {
 pub struct Auth(toml::Table);
 
 #[derive(Clone, Default, Debug)]
-pub struct Saver {
-	using: Vec<String>,
-	table: HashMap<String, toml::Table>,
-}
+pub struct Saver(toml::Table);
 
 impl Config {
 	pub fn load(matches: &ArgMatches) -> error::Result<Config> {
@@ -173,61 +170,54 @@ impl Config {
 			},
 
 			saver: {
-				let mut config = Saver::default();
-
 				if let Some(table) = table.get("saver").and_then(|v| v.as_table()) {
-					if let Some(list) = table.get("use").and_then(|v| v.as_slice()) {
-						for using in list {
-							if let Some(name) = using.as_str() {
-								config.using.push(name.into());
-								config.table.insert(name.into(), table.get(name).and_then(|v| v.as_table()).cloned().unwrap_or_default());
-							}
-						}
-					}
+					Saver(table.clone())
 				}
-
-				config
+				else {
+					Saver(toml::Table::new())
+				}
 			},
 		})
 	}
 
-	pub fn timer(&self) -> Timer {
-		self.timer.clone()
+	pub fn timer(&self) -> &Timer {
+		&self.timer
 	}
 
-	pub fn server(&self) -> Server {
-		self.server.clone()
+	pub fn server(&self) -> &Server {
+		&self.server
 	}
 
-	pub fn locker(&self) -> Locker {
-		self.locker.clone()
+	pub fn locker(&self) -> &Locker {
+		&self.locker
 	}
 
-	pub fn auth(&self) -> Auth {
-		self.auth.clone()
+	pub fn auth(&self) -> &Auth {
+		&self.auth
 	}
 
-	pub fn saver<S: AsRef<str>>(&self, name: S) -> toml::Table {
-		if let Some(conf) = self.saver.table.get(name.as_ref()) {
-			conf.clone()
-		}
-		else {
-			toml::Table::new()
-		}
-	}
-
-	pub fn savers(&self) -> &[String] {
-		&self.saver.using[..]
+	pub fn saver(&self) -> &Saver {
+		&self.saver
 	}
 }
 
 impl Auth {
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
-		if let Some(table) = self.0.get(name.as_ref()).and_then(|v| v.as_table()) {
-			table.clone()
-		}
-		else {
-			toml::Table::new()
-		}
+		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
+	}
+}
+
+impl Saver {
+	pub fn using(&self) -> Vec<&str> {
+		self.0.get("use").and_then(|v| v.as_slice())
+			.unwrap_or(&[])
+			.iter()
+			.filter(|v| v.as_str().is_some())
+			.map(|v| v.as_str().unwrap())
+			.collect()
+	}
+
+	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
+		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}
 }

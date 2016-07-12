@@ -85,6 +85,13 @@ XRandr is used to change resolution or rotate the screen.
 - `width`  = `Integer`
 - `height` = `Integer`
 
+### Throttle
+
+The throttle request is sent when the saver should try and reduce power usage.
+
+- `type`     = `throttle`
+- `throttle` = `Boolean`
+
 ### Pointer
 
 The pointer request is sent when a pointer event on the saver window has happened.

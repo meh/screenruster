@@ -82,7 +82,7 @@ unsafe extern "C" fn report(display: *mut xlib::Display, error: *mut xlib::XErro
 
 impl Display {
 	/// Open the default display.
-	pub fn open(config: config::Locker) -> error::Result<Arc<Display>> {
+	pub fn open(config: &config::Locker) -> error::Result<Arc<Display>> {
 		unsafe {
 			let id = if let Some(name) = config.display.as_ref() {
 				util::with(name, |name| xlib::XOpenDisplay(name))
