@@ -100,22 +100,22 @@ impl Server {
 
 			let tree = f.tree()
 				.add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
-					.add_m(f.method("Lock", |_, _, _| {
+					.add_m(f.method("Lock", |m, _, _| {
 						sender.send(Request::Lock).unwrap();
 
-						Ok(vec![])
+						Ok(vec![m.method_return()])
 					}))
 
-					.add_m(f.method("Cycle", |_, _, _| {
+					.add_m(f.method("Cycle", |m, _, _| {
 						sender.send(Request::Cycle).unwrap();
 
-						Ok(vec![])
+						Ok(vec![m.method_return()])
 					}))
 
-					.add_m(f.method("SimulateUserActivity", |_, _, _| {
+					.add_m(f.method("SimulateUserActivity", |m, _, _| {
 						sender.send(Request::SimulateUserActivity).unwrap();
 
-						Ok(vec![])
+						Ok(vec![m.method_return()])
 					}))
 
 					.add_m(f.method("Inhibit", |m, _, _| {
@@ -149,7 +149,7 @@ impl Server {
 						if let Some(cookie) = m.get1() {
 							sender.send(Request::UnInhibit(cookie)).unwrap();
 
-							Ok(vec![])
+							Ok(vec![m.method_return()])
 						}
 						else {
 							Err(dbus::tree::MethodErr::no_arg())
@@ -187,7 +187,7 @@ impl Server {
 						if let Some(cookie) = m.get1() {
 							sender.send(Request::UnThrottle(cookie)).unwrap();
 
-							Ok(vec![])
+							Ok(vec![m.method_return()])
 						}
 						else {
 							Err(dbus::tree::MethodErr::no_arg())
@@ -198,7 +198,7 @@ impl Server {
 						if let Some(value) = m.get1() {
 							sender.send(Request::SetActive(value)).unwrap();
 
-							Ok(vec![])
+							Ok(vec![m.method_return()])
 						}
 						else {
 							Err(dbus::tree::MethodErr::no_arg())
