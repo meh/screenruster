@@ -244,7 +244,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let timer  = Timer::spawn(config.timer().clone())?;
 	let auth   = Auth::spawn(config.auth().clone())?;
 	let server = Server::spawn(config.server().clone())?;
-	let locker = Locker::spawn(config)?;
+	let locker = Locker::spawn(config.clone())?;
 
 	let mut locked  = None: Option<Instant>;
 	let mut started = None: Option<Instant>;
@@ -385,7 +385,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Throttle { .. } => {
-						if throttlers.is_empty() {
+						if throttlers.is_empty() && !config.saver().throttle() {
 							locker.throttle(true).unwrap();
 						}
 
@@ -395,7 +395,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					server::Request::UnThrottle(cookie) => {
 						throttlers.remove(&cookie);
 
-						if throttlers.is_empty() {
+						if throttlers.is_empty() && !config.saver().throttle() {
 							locker.throttle(false).unwrap();
 						}
 					}
