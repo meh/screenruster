@@ -4,7 +4,8 @@ An X11 screen saver and locker.
 
 Installation
 ------------
-To install the daemon you can use Cargo.
+To install the daemon you will need a nightly toolchain, then you can use
+Cargo:
 
 ```shell
 cargo install screenruster
