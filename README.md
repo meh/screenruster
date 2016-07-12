@@ -2,6 +2,29 @@ ScreenRuster
 ============
 An X11 screen saver and locker.
 
+Installation
+------------
+To install the daemon you can use Cargo.
+
+```shell
+cargo install screenruster
+```
+
+Once that's done you can create a configuration file at
+`$XDG_CONFIG_HOME/screenruster/config.toml` (`$XDG_CONFIG_HOME` defaults to
+`~/.config/`) or copy one from `assets/config.toml`.
+
+Screen savers have to be in `$PATH` and the executable name has to start with
+`screenruster-saver-`.
+
+A sample screen saver can be installed with Cargo:
+
+```shell
+cargo install screenruster-saver-laughing_man
+```
+
+The sample configuration file already has default settings for it.
+
 Architecture
 ------------
 The architecture loosely follows xscreensaver  because it's the best approach,
