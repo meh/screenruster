@@ -5,7 +5,7 @@ use std::ffi::{CStr, CString};
 use toml;
 use pam;
 use libc::{c_char, c_int, c_void, size_t};
-use libc::{calloc, free};
+use libc::{calloc, free, strdup};
 
 use error;
 use super::Authenticate;
@@ -123,8 +123,4 @@ extern "C" fn conversation(count: c_int, messages: *mut *mut pam::PamMessage, re
 
 		result as c_int
 	}
-}
-
-extern {
-	fn strdup(s: *const c_char) -> *mut c_char;
 }
