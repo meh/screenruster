@@ -139,14 +139,10 @@ impl Locker {
 									stopping = false;
 
 									for window in windows.values_mut() {
-										let mut has_saver = false;
-
 										if !config.saver().using().is_empty() {
 											let name = config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
 											if let Ok(mut saver) = Saver::spawn(name) {
-												has_saver = true;
-
 												saver.config(config.saver().get(name)).unwrap();
 												saver.target(display.name(), window.screen, window.id).unwrap();
 
@@ -155,14 +151,13 @@ impl Locker {
 												}
 
 												savers.insert(window.id, saver);
+												continue;
 											}
 										}
 
-										if !has_saver {
-											// FIXME(meh): Do not crash on grab failure.
-											window.lock().unwrap();
-											window.blank();
-										}
+										// FIXME(meh): Do not crash on grab failure.
+										window.lock().unwrap();
+										window.blank();
 									}
 								}
 
