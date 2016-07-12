@@ -184,6 +184,13 @@ impl Display {
 		}
 	}
 
+	pub fn sanitize(&self) {
+		unsafe {
+			xlib::XForceScreenSaver(self.id, xlib::ScreenSaverReset);
+			xlib::XSetScreenSaver(self.id, 0, 0, 0, xlib::AllowExposures);
+		}
+	}
+
 	/// Observe events on the given window and all its children.
 	pub fn observe(&self, window: xlib::Window) {
 		unsafe {

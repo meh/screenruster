@@ -79,7 +79,7 @@ impl Locker {
 			let mut event    = mem::zeroed(): xlib::XEvent;
 
 			let display = Display::open(config.locker())?;
-			xlib::XSetScreenSaver(display.id, 0, 0, 0, xlib::AllowExposures);
+			display.sanitize();
 
 			for screen in 0 .. xlib::XScreenCount(display.id) {
 				let window = Window::create(display.clone(), screen)?;
@@ -106,6 +106,8 @@ impl Locker {
 						if let Ok(message) = receiver.try_recv() {
 							match message {
 								Request::Sanitize => {
+									display.sanitize();
+
 									for window in windows.values_mut() {
 										window.sanitize();
 									}
