@@ -38,6 +38,9 @@ blank = false
 # A list of screen savers to use.
 use = ["laughing_man"]
 
+# Whether to always throttle or not.
+throttle = false
+
 # Settings for a specific screen saver.
 [saver.laughing_man]
 blur = { max  = 1.2, step = 0.00001, count = 4 }

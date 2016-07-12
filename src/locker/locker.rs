@@ -55,6 +55,7 @@ pub enum Request {
 	Sanitize,
 	Activity,
 	Power(bool),
+	Throttle(bool),
 
 	Start,
 	Lock,
@@ -117,7 +118,19 @@ impl Locker {
 									sender.send(Response::Activity).unwrap();
 								}
 
+								Request::Throttle(value) => {
+									for saver in savers.values_mut() {
+										saver.throttle(value).unwrap();
+									}
+								}
+
 								Request::Power(value) => {
+									if value {
+										for window in windows.values_mut() {
+											window.blank();
+										}
+									}
+
 									display.power(value);
 								}
 
@@ -136,6 +149,11 @@ impl Locker {
 
 												saver.config(config.saver().get(name)).unwrap();
 												saver.target(display.name(), window.screen, window.id).unwrap();
+
+												if config.saver().throttle() {
+													saver.throttle(true).unwrap();
+												}
+
 												savers.insert(window.id, saver);
 											}
 										}
@@ -404,6 +422,10 @@ impl Locker {
 
 	pub fn activity(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Activity)
+	}
+
+	pub fn throttle(&self, value: bool) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Throttle(value))
 	}
 }
 

@@ -138,6 +138,11 @@ impl Saver {
 									"window"  => window
 								},
 
+								api::Request::Throttle(value) => object!{
+									"type"     => "throttle",
+									"throttle" => value
+								},
+
 								api::Request::Resize { width, height } => object!{
 									"type"   => "resize",
 									"width"  => width,
@@ -288,6 +293,11 @@ impl Saver {
 		})
 	}
 
+	pub fn throttle(&mut self, value: bool) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Throttle(value))
+	}
+
+	/// Resize the saver.
 	pub fn resize(&mut self, width: u32, height: u32) -> Result<(), SendError<Request>> {
 		self.send(api::Request::Resize {
 			width:  width,
@@ -295,10 +305,12 @@ impl Saver {
 		})
 	}
 
+	/// Send a pointer event.
 	pub fn pointer(&mut self, pointer: Pointer) -> Result<(), SendError<Request>> {
 		self.send(api::Request::Pointer(pointer))
 	}
 
+	/// Send a password event.
 	pub fn password(&mut self, password: Password) -> Result<(), SendError<Request>> {
 		self.send(api::Request::Password(password))
 	}

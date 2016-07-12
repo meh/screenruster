@@ -217,6 +217,10 @@ impl Saver {
 			.collect()
 	}
 
+	pub fn throttle(&self) -> bool {
+		self.0.get("throttle").and_then(|v| v.as_bool()).unwrap_or(false)
+	}
+
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}

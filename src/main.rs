@@ -385,11 +385,19 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Throttle { .. } => {
+						if throttlers.is_empty() {
+							locker.throttle(true).unwrap();
+						}
+
 						server.response(server::Response::Throttle(insert(&mut throttlers))).unwrap();
 					}
 
 					server::Request::UnThrottle(cookie) => {
 						throttlers.remove(&cookie);
+
+						if throttlers.is_empty() {
+							locker.throttle(false).unwrap();
+						}
 					}
 
 					server::Request::SetActive(active) => {
