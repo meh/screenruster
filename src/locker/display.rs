@@ -184,9 +184,16 @@ impl Display {
 		}
 	}
 
+	/// Sanitize the display from bad X11 things.
 	pub fn sanitize(&self) {
 		unsafe {
-			xlib::XForceScreenSaver(self.id, xlib::ScreenSaverReset);
+			// Reset DPMS settings to usable.
+			if self.dpms.is_some() {
+				dpms::DPMSSetTimeouts(self.id, 0xffff, 0xffff, 0xffff);
+				dpms::DPMSEnable(self.id);
+			}
+
+			// Reset screen saver timeout.
 			xlib::XSetScreenSaver(self.id, 0, 0, 0, xlib::AllowExposures);
 		}
 	}
