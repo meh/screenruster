@@ -31,6 +31,7 @@ use libc::{c_int, c_uint};
 
 use error;
 use config::Config;
+use api;
 use saver::{self, Saver, Password, Pointer};
 use super::{Display, Window};
 
@@ -72,6 +73,8 @@ impl Locker {
 		unsafe {
 			let mut windows  = HashMap::new(): HashMap<xlib::Window, Window>;
 			let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
+			let mut starting = false;
+			let mut stopping = false;
 			let mut password = String::new();
 			let mut event    = mem::zeroed(): xlib::XEvent;
 
@@ -99,22 +102,6 @@ impl Locker {
 
 				thread::spawn(move || {
 					loop {
-						// Purge crashed savers.
-						{
-							let mut crashed = HashSet::new();
-
-							for (&id, saver) in &savers {
-								if saver.is_crashed() {
-									crashed.insert(id);
-								}
-							}
-
-							for id in &crashed {
-								windows.get_mut(id).unwrap().blank();
-								savers.remove(id);
-							}
-						}
-
 						// Check if there are any control messages.
 						if let Ok(message) = receiver.try_recv() {
 							match message {
@@ -133,6 +120,9 @@ impl Locker {
 								}
 
 								Request::Start => {
+									starting = true;
+									stopping = false;
+
 									for window in windows.values_mut() {
 										let mut has_saver = false;
 
@@ -140,13 +130,11 @@ impl Locker {
 											let name = &config.savers()[rand::thread_rng().gen_range(0, config.savers().len())];
 
 											if let Ok(mut saver) = Saver::spawn(name) {
-												saver.config(config.saver(name));
-												saver.target(display.name(), window.screen, window.id);
+												has_saver = true;
 
-												if !saver.is_crashed() {
-													savers.insert(window.id, saver);
-													has_saver = true;
-												}
+												saver.config(config.saver(name)).unwrap();
+												saver.target(display.name(), window.screen, window.id).unwrap();
+												savers.insert(window.id, saver);
 											}
 										}
 
@@ -164,26 +152,19 @@ impl Locker {
 
 								Request::Auth(state) => {
 									for saver in savers.values_mut() {
-										saver.password(if state { Password::Success } else { Password::Failure });
+										saver.password(if state { Password::Success } else { Password::Failure }).unwrap();
 									}
 								}
 
 								Request::Stop => {
-									password = String::new();
+									starting = false;
+									stopping = true;
 
 									for window in windows.values_mut() {
-										let mut has_saver = false;
-
 										if let Some(saver) = savers.get_mut(&window.id) {
-											saver.stop();
-
-											if !saver.is_crashed() {
-												has_saver = true;
-											}
+											saver.stop().unwrap();
 										}
-
-										if !has_saver {
-											savers.remove(&window.id);
+										else {
 											window.unlock();
 										}
 									}
@@ -195,21 +176,27 @@ impl Locker {
 
 						// Check if there are any messages from savers.
 						{
-							let mut stopped = HashSet::new();
+							let mut stopped  = HashSet::new();
+							let mut returned = HashSet::new();
 
 							for (&id, saver) in &mut savers {
 								match saver.recv() {
-									Some(saver::Response::Initialized) => {
-										saver.start();
+									Some(saver::Response::Forward(api::Response::Initialized)) => {
+										saver.start().unwrap();
 									}
 
-									Some(saver::Response::Started) => {
-										// FIXME(meh): Do not crash on grab failure.
-										windows.get_mut(&id).unwrap().lock().unwrap();
+									Some(saver::Response::Forward(api::Response::Started)) => {
+										if saver.was_started() {
+											// FIXME(meh): Do not crash on grab failure.
+											windows.get_mut(&id).unwrap().lock().unwrap();
+										}
+										else {
+											saver.kill();
+										}
 									}
 
-									Some(saver::Response::Stopped) => {
-										if saver.is_stopping() {
+									Some(saver::Response::Forward(api::Response::Stopped)) => {
+										if saver.was_stopped() {
 											stopped.insert(id);
 										}
 										else {
@@ -217,7 +204,26 @@ impl Locker {
 										}
 									}
 
+									Some(saver::Response::Exit(..)) => {
+										returned.insert(id);
+									}
+
 									None => (),
+								}
+							}
+
+							for id in &returned {
+								stopped.remove(id);
+
+								let saver  = savers.remove(id).unwrap();
+								let window = windows.get_mut(id).unwrap();
+
+								if !saver.was_stopped() {
+									window.lock().unwrap();
+									window.blank();
+								}
+								else {
+									window.unlock();
 								}
 							}
 
@@ -247,7 +253,7 @@ impl Locker {
 										window.resize(event.width as u32, event.height as u32);
 
 										if let Some(saver) = savers.get_mut(&window.id) {
-											saver.resize(event.width as u32, event.height as u32);
+											saver.resize(event.width as u32, event.height as u32).unwrap();
 										}
 									}
 								}
@@ -270,7 +276,7 @@ impl Locker {
 											password.pop();
 
 											for saver in savers.values_mut() {
-												saver.password(Password::Delete);
+												saver.password(Password::Delete).unwrap();
 											}
 										}
 
@@ -279,14 +285,14 @@ impl Locker {
 											password.clear();
 
 											for saver in savers.values_mut() {
-												saver.password(Password::Reset);
+												saver.password(Password::Reset).unwrap();
 											}
 										}
 
 										// Send the password.
 										keysym::XK_Return => {
 											for saver in savers.values_mut() {
-												saver.password(Password::Check);
+												saver.password(Password::Check).unwrap();
 											}
 
 											sender.send(Response::Password(password)).unwrap();
@@ -304,7 +310,7 @@ impl Locker {
 												password.push(ch);
 
 												for saver in savers.values_mut() {
-													saver.password(Password::Insert);
+													saver.password(Password::Insert).unwrap();
 												}
 											}
 										}
@@ -330,7 +336,7 @@ impl Locker {
 
 											button: event.button as u8,
 											press:  event.type_ == xlib::ButtonPress,
-										})
+										}).unwrap()
 									}
 								}
 							}
@@ -346,7 +352,7 @@ impl Locker {
 										saver.pointer(Pointer::Move {
 											x: event.x,
 											y: event.y,
-										})
+										}).unwrap();
 									}
 								}
 							}

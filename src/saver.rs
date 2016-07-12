@@ -16,41 +16,70 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{self, Child, Command, Stdio};
+use std::ops::Deref;
 use std::thread;
-use std::sync::mpsc::{Receiver, TryRecvError, Sender, channel};
+use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{Receiver, TryRecvError, Sender, SendError, channel};
 
 use toml;
 use log;
-pub use api::{Request, Response, Password, Pointer};
+use api;
+pub use api::{Password, Pointer};
 
 use api::json;
 use error;
 
 pub struct Saver {
-	process:  Child,
+	process:  Arc<Mutex<Child>>,
 	receiver: Receiver<Response>,
-	sender:   Sender<Option<Request>>,
+	sender:   Sender<Request>,
 
-	starting: bool,
-	stopping: bool,
-	crashed:  bool,
+	started: bool,
+	stopped: bool,
+}
+
+#[derive(Debug)]
+pub enum Request {
+	Forward(api::Request),
+	Exit,
+}
+
+#[derive(Debug)]
+pub enum Response {
+	Forward(api::Response),
+	Exit(Exit),
+}
+
+#[derive(Debug)]
+pub struct Exit {
+	status: process::ExitStatus,
+	sender: Sender<Response>,
+}
+
+impl Deref for Exit {
+	type Target = process::ExitStatus;
+
+	fn deref(&self) -> &Self::Target {
+		&self.status
+	}
 }
 
 impl Saver {
 	/// Spawn a saver with the given name.
 	pub fn spawn<S: AsRef<str>>(name: S) -> error::Result<Saver> {
-		let mut child = Command::new(format!("screenruster-saver-{}", name.as_ref()))
+		let child = Arc::new(Mutex::new(Command::new(format!("screenruster-saver-{}", name.as_ref()))
 			.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
-			.spawn()?;
+			.spawn()?));
 
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 
 		// Reader.
 		{
-			let input = child.stdout.take().unwrap();
-			let guard = i_sender.clone();
+			let input    = child.lock().unwrap().stdout.take().unwrap();
+			let child    = child.clone();
+			let internal = i_sender.clone();
 
 			thread::spawn(move || {
 				for line in BufReader::new(input).lines() {
@@ -59,105 +88,115 @@ impl Saver {
 					}
 
 					if let Ok(message) = json::parse(&line.unwrap()) {
-						sender.send(match json!(message["type"].as_str()) {
+						sender.send(Response::Forward(match json!(message["type"].as_str()) {
 							"initialized" => {
-								Response::Initialized
+								api::Response::Initialized
 							}
 
 							"started" => {
-								Response::Started
+								api::Response::Started
 							}
 
 							"stopped" => {
-								Response::Stopped
+								api::Response::Stopped
 							}
 
 							_ =>
 								continue
-						}).unwrap();
+						})).unwrap();
 					}
 				}
 
-				guard.send(None).unwrap();
+				internal.send(Request::Exit).unwrap();
+
+				let mut child = child.lock().unwrap();
+				sender.send(Response::Exit(Exit {
+					status: child.wait().unwrap(),
+					sender: sender.clone()
+				})).unwrap()
 			});
 		}
 
 		// Writer.
 		{
-			let mut output = child.stdin.take().unwrap();
+			let mut output = child.lock().unwrap().stdin.take().unwrap();
 
 			thread::spawn(move || {
 				while let Ok(request) = receiver.recv() {
-					if request.is_none() {
-						break;
+					match request {
+						Request::Forward(request) => {
+							output.write_all(json::stringify(match request {
+								api::Request::Config(config) => object!{
+									"type"   => "config",
+									"config" => config
+								},
+
+								api::Request::Target { display, screen, window } => object!{
+									"type"    => "target",
+									"display" => display,
+									"screen"  => screen,
+									"window"  => window
+								},
+
+								api::Request::Resize { width, height } => object!{
+									"type"   => "resize",
+									"width"  => width,
+									"height" => height
+								},
+
+								api::Request::Pointer(Pointer::Move { x, y }) => object!{
+									"type" => "pointer",
+									"move" => object!{
+										"x" => x,
+										"y" => y
+									}
+								},
+
+								api::Request::Pointer(Pointer::Button { x, y, button, press }) => object!{
+									"type"   => "pointer",
+									"button" => object!{
+										"x"      => x,
+										"y"      => y,
+										"button" => button,
+										"press"  => press
+									}
+								},
+
+								api::Request::Password(password) => object!{
+									"type"     => "password",
+									"password" => match password {
+										Password::Insert  => "insert",
+										Password::Delete  => "delete",
+										Password::Reset   => "reset",
+										Password::Check   => "check",
+										Password::Success => "success",
+										Password::Failure => "failure",
+									}
+								},
+
+								api::Request::Start => object!{
+									"type" => "start"
+								},
+
+								api::Request::Stop => object!{
+									"type" => "stop"
+								},
+							}).as_bytes()).unwrap();
+
+							output.write_all(b"\n").unwrap();
+						}
+
+						Request::Exit => {
+							break;
+						}
 					}
-
-					output.write_all(json::stringify(match request.unwrap() {
-						Request::Config(config) => object!{
-							"type"   => "config",
-							"config" => config
-						},
-
-						Request::Target { display, screen, window } => object!{
-							"type"    => "target",
-							"display" => display,
-							"screen"  => screen,
-							"window"  => window
-						},
-
-						Request::Resize { width, height } => object!{
-							"type"   => "resize",
-							"width"  => width,
-							"height" => height
-						},
-
-						Request::Pointer(Pointer::Move { x, y }) => object!{
-							"type" => "pointer",
-							"move" => object!{
-								"x" => x,
-								"y" => y
-							}
-						},
-
-						Request::Pointer(Pointer::Button { x, y, button, press }) => object!{
-							"type"   => "pointer",
-							"button" => object!{
-								"x"      => x,
-								"y"      => y,
-								"button" => button,
-								"press"  => press
-							}
-						},
-
-						Request::Password(password) => object!{
-							"type"     => "password",
-							"password" => match password {
-								Password::Insert  => "insert",
-								Password::Delete  => "delete",
-								Password::Reset   => "reset",
-								Password::Check   => "check",
-								Password::Success => "success",
-								Password::Failure => "failure",
-							}
-						},
-
-						Request::Start => object!{
-							"type" => "start"
-						},
-
-						Request::Stop => object!{
-							"type" => "stop"
-						},
-					}).as_bytes()).unwrap();
-
-					output.write_all(b"\n").unwrap();
 				}
 			});
 		}
 
 		// Logger.
 		{
-			let input = child.stderr.take().unwrap();
+			let input = child.lock().unwrap().stderr.take().unwrap();
 
 			thread::spawn(move || {
 				for line in BufReader::new(input).lines() {
@@ -177,27 +216,21 @@ impl Saver {
 			receiver: i_receiver,
 			sender:   i_sender,
 
-			crashed:  false,
-			starting: false,
-			stopping: false,
+			started: false,
+			stopped: false,
 		})
 	}
 
-	pub fn is_crashed(&self) -> bool {
-		self.crashed
+	pub fn was_started(&self) -> bool {
+		self.started
 	}
 
-	pub fn is_starting(&self) -> bool {
-		self.starting
-	}
-
-	pub fn is_stopping(&self) -> bool {
-		self.stopping
+	pub fn was_stopped(&self) -> bool {
+		self.stopped
 	}
 
 	pub fn kill(&mut self) {
-		self.process.kill().unwrap();
-		self.crashed = true;
+		let _ = self.process.lock().unwrap().kill();
 	}
 
 	/// Try to receive a message from the saver.
@@ -210,20 +243,17 @@ impl Saver {
 				None,
 
 			Err(TryRecvError::Disconnected) => {
-				self.crashed = true;
 				None
 			}
 		}
 	}
 
-	fn send(&mut self, request: Request) {
-		if self.sender.send(Some(request)).is_err() {
-			self.crashed = true;
-		}
+	fn send(&mut self, request: api::Request) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Forward(request))
 	}
 
 	/// Configure the saver.
-	pub fn config(&mut self, config: toml::Table) {
+	pub fn config(&mut self, config: toml::Table) -> Result<(), SendError<Request>> {
 		fn convert(value: &toml::Value) -> json::JsonValue {
 			match *value {
 				toml::Value::String(ref value) | toml::Value::Datetime(ref value) =>
@@ -246,42 +276,42 @@ impl Saver {
 			}
 		}
 
-		self.send(Request::Config(convert(&toml::Value::Table(config))))
+		self.send(api::Request::Config(convert(&toml::Value::Table(config))))
 	}
 
 	/// Select the rendering target for the saver.
-	pub fn target<S: AsRef<str>>(&mut self, display: S, screen: i32, window: u64) {
-		self.send(Request::Target {
+	pub fn target<S: AsRef<str>>(&mut self, display: S, screen: i32, window: u64) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Target {
 			display: display.as_ref().into(),
 			screen:  screen,
 			window:  window,
 		})
 	}
 
-	pub fn resize(&mut self, width: u32, height: u32) {
-		self.send(Request::Resize {
+	pub fn resize(&mut self, width: u32, height: u32) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Resize {
 			width:  width,
 			height: height,
 		})
 	}
 
-	pub fn pointer(&mut self, pointer: Pointer) {
-		self.send(Request::Pointer(pointer))
+	pub fn pointer(&mut self, pointer: Pointer) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Pointer(pointer))
 	}
 
-	pub fn password(&mut self, password: Password) {
-		self.send(Request::Password(password))
+	pub fn password(&mut self, password: Password) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Password(password))
 	}
 
 	/// Start the saver.
-	pub fn start(&mut self) {
-		self.starting = true;
-		self.send(Request::Start)
+	pub fn start(&mut self) -> Result<(), SendError<Request>> {
+		self.started = true;
+		self.send(api::Request::Start)
 	}
 
 	/// Stop the saver.
-	pub fn stop(&mut self) {
-		self.stopping = true;
-		self.send(Request::Stop)
+	pub fn stop(&mut self) -> Result<(), SendError<Request>> {
+		self.stopped = true;
+		self.send(api::Request::Stop)
 	}
 }
