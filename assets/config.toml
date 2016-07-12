@@ -1,24 +1,44 @@
+# X11 related settings.
+[locker]
+# The name of the display.
+# display = ":0.0"
+
+# Whether to take control of DPMS settings or not.
+dpms = true
+
+# DBus related settings.
 [server]
-ignore = ["throttle", "inhibit"]
+# A list of types of messages to ignore.
+#
+# - "inhibit" will ignore screen saver inhibition requests.
+# - "throttle" will ignore screen saver throttling requests.
+#
+# ignore = ["inhibit", "throttle"]
 
 [timer]
-beat    = 10
+# How many seconds to wait between each heartbeat.
+#
+# Heartbeats are used to sanitize X11 windows and other things.
+beat = 10
+
+# How many seconds to wait before starting the screen saver.
 timeout = 360
-lock    = 0
-cycle   = false
-blank   = false
 
-[auth.internal]
-password = "test"
+# How many seconds to wait before locking the screen after the screen saver has
+# been started.
+lock = 0
 
+# How many seconds to wait before blanking the screen.
+#
+# `false` just makes it never blank.
+blank = false
+
+# General screen saver settings.
 [saver]
+# A list of screen savers to use.
 use = ["laughing_man"]
 
-[saver.laughing_man.blur]
-max   = 1.2
-step  = 0.00001
-count = 4
-
-[saver.laughing_man.man]
-rotate = 0.000005
-scale  = 400.0
+# Settings for a specific screen saver.
+[saver.laughing_man]
+blur = { max  = 1.2, step = 0.00001, count = 4 }
+man  = { rotate = 0.000005, scale  = 400.0 }
