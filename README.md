@@ -26,8 +26,15 @@ cargo install screenruster-saver-laughing_man
 
 The sample configuration file already has default settings for it.
 
+Available savers
+================
+Tthis is a list of available screen savers that will be updated over time, if
+you made a saver and want it added here just open a pull request.
+
+- [Laughing Man](https://github.com/meh/screenruster-saver-laughing_man) from Ghost in the Shell: Stand Alone Complex
+
 Architecture
-------------
+============
 The architecture loosely follows xscreensaver  because it's the best approach,
 keep the screen locking simple and delegate the fancy graphics to a separate
 proccess, this has the nice property of making buggy savers not bring down the
@@ -42,6 +49,8 @@ coming from `stderr` to allow for debugging or logging.
 
 The job of the saver is merely to do the rendering, this includes any fade
 in/out or dialog boxes, this further reduces the attack surface of the locker.
+__Note that the saver does not actually get the input, it just gets `Insert` or `Delete` events, so
+it can fill its dialog box.__
 
 Protocol
 ========
@@ -91,6 +100,13 @@ XRandr is used to change resolution or rotate the screen.
 The throttle request is sent when the saver should try and reduce power usage.
 
 - `type`     = `throttle`
+- `throttle` = `Boolean`
+
+### Blank
+
+The blank request is sent when the screen has been blanked or unblanked.
+
+- `type`     = `blank`
 - `throttle` = `Boolean`
 
 ### Pointer
@@ -172,10 +188,3 @@ auth	include		system-auth
 
 If you want PAM account management to be respected, make sure to build with the
 `auth-pam-accounts` feature.
-
-Available savers
-================
-Tthis is a list of available screen savers that will be updated over time, if
-you made a saver and want it added here just open a pull request.
-
-- [Laughing Man](https://github.com/meh/screenruster-saver-laughing_man) from Ghost in the Shell: Stand Alone Complex

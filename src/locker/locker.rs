@@ -125,10 +125,8 @@ impl Locker {
 								}
 
 								Request::Power(value) => {
-									if value {
-										for window in windows.values_mut() {
-											window.blank();
-										}
+									for saver in savers.values_mut() {
+										saver.blank(!value).unwrap();
 									}
 
 									display.power(value);

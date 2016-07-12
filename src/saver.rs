@@ -143,6 +143,11 @@ impl Saver {
 									"throttle" => value
 								},
 
+								api::Request::Blank(value) => object!{
+									"type"  => "blank",
+									"blank" => value
+								},
+
 								api::Request::Resize { width, height } => object!{
 									"type"   => "resize",
 									"width"  => width,
@@ -293,8 +298,14 @@ impl Saver {
 		})
 	}
 
+	/// Throttle or unthrottle the saer.
 	pub fn throttle(&mut self, value: bool) -> Result<(), SendError<Request>> {
 		self.send(api::Request::Throttle(value))
+	}
+
+	/// Tell the saver the screen has been blanked or unblanked.
+	pub fn blank(&mut self, value: bool) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Blank(value))
 	}
 
 	/// Resize the saver.
