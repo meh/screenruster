@@ -70,7 +70,7 @@ a process is spawned.
 The configuration is monolithic and managed by the daemon in a TOML file, the
 related TOML map is converted to JSON and sent to the saver.
 
-- `type`   = `config`
+- `type`   = `"config"`
 - `config` = `Object`
 
 ### Target
@@ -81,7 +81,7 @@ a process is spawned.
 It contains the details required to get the X11 window, the display name, the
 screen number and the window `XID`.
 
-- `type`    = `target`
+- `type`    = `"target"`
 - `display` = `String`
 - `screen`  = `Integer`
 - `window`  = `Integer`
@@ -91,7 +91,7 @@ screen number and the window `XID`.
 The resize request is sent when a locker window is resized, this can happen if
 XRandr is used to change resolution or rotate the screen.
 
-- `type`   = `resize`
+- `type`   = `"resize"`
 - `width`  = `Integer`
 - `height` = `Integer`
 
@@ -99,23 +99,23 @@ XRandr is used to change resolution or rotate the screen.
 
 The throttle request is sent when the saver should try and reduce power usage.
 
-- `type`     = `throttle`
+- `type`     = `"throttle"`
 - `throttle` = `Boolean`
 
 ### Blank
 
 The blank request is sent when the screen has been blanked or unblanked.
 
-- `type`     = `blank`
+- `type`     = `"blank"`
 - `throttle` = `Boolean`
 
 ### Pointer
 
 The pointer request is sent when a pointer event on the saver window has happened.
 
-- `type`    = `pointer`
+- `type`    = `"pointer"`
 - `move`    = `Object { x, y }`
-- `buttonn` = `Object { x, y, button, press }`
+- `button` = `Object { x, y, button, press }`
 
 ### Password
 
@@ -123,22 +123,22 @@ The password request is sent when any authorization related changes happened,
 this includes when characters are being inserted or deleted, the password is
 being checked or authorization failed or succeded.
 
-- `type`     = `password`
-- `password` = `insert`, `delete`, `reset`, `check`, `success`, `failure`
+- `type`     = `"password"`
+- `password` = `"insert"`, `"delete"`, `"reset"`, `"check"`, `"success"`, `"failure"`
 
 ### Start
 
 The start request is sent when the saver should start its rendering, this may
 include a fade in or other fancy graphics.
 
-- `type` = `start`
+- `type` = `"start"`
 
 ### Stop
 
 The stop request is sent when the saver should stop its rendering, this may
 include a fade out or other fancy graphics.
 
-- `type` = `stop`
+- `type` = `"stop"`
 
 Responses
 ---------
@@ -150,14 +150,14 @@ The initialized response is sent after the handshake is done and the saver is
 ready to start, since fancy graphics may require loading textures and such, the
 saver is given some leeway to get ready to render.
 
-- `type` = `initialized`
+- `type` = `"initialized"`
 
 ### Started
 
 The started response is sent after a `start` request has been received and the
 saver started its rendering, it tells the daemon it can show the window.
 
-- `type` = `started`
+- `type` = `"started"`
 
 ### Stopped
 
