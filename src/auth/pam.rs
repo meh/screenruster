@@ -69,15 +69,19 @@ impl Authenticate for Auth {
 			pam!(handle, pam::set_item(handle, pam::PamItemType::TTY, strdup(b":0.0\x00".as_ptr() as *const _) as *mut _))?;
 			pam!(handle, pam::authenticate(handle, pam::PamFlag::NONE))?;
 
+			// On some systems account management is not configured properly, but
+			// some PAM modules require it to be called to work properly, so make the
+			// erroring optional.
 			if self.accounts {
 				pam!(handle, pam::acct_mgmt(handle, pam::PamFlag::NONE))?;
 				pam!(handle, pam::setcred(handle, pam::PamFlag::REINITIALIZE_CRED))?;
+				pam!(handle);
 			}
 			else {
-				pam::acct_mgmt(handle, pam::PamFlag::NONE);
+				if pam!(handle, pam::acct_mgmt(handle, pam::PamFlag::NONE)).is_ok() {
+					pam!(handle);
+				}
 			}
-
-			pam!(handle);
 
 			Ok(true)
 		}
