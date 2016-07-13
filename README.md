@@ -4,8 +4,8 @@ An X11 screen saver and locker.
 
 Installation
 ------------
-To install the daemon you will need a nightly toolchain, then you can use
-Cargo:
+To install the daemon you will need a nightly Rust toolchain, then you can
+install it with Cargo:
 
 ```shell
 cargo install screenruster
@@ -28,7 +28,7 @@ The sample configuration file already has default settings for it.
 
 Available savers
 ================
-Tthis is a list of available screen savers that will be updated over time, if
+This is a list of available screen savers that will be updated over time, if
 you made a saver and want it added here just open a pull request.
 
 - [Laughing Man](https://github.com/meh/screenruster-saver-laughing_man) from Ghost in the Shell: Stand Alone Complex
@@ -166,11 +166,13 @@ saver stopped its rendering, it tells the daemon it can hide the window.
 
 Authorization
 =============
-There are various authorization modules.
+Authorization is handled by various modules, each module tries to authenticate, the first
+successful authentication unlocks the screen.
 
 Internal
 --------
-The internal module uses a password specified in the configuration file.
+The internal module uses a password specified in the configuration file, this
+was initially made for testing, and you should probably not use it.
 
 ```toml
 [auth.internal]
@@ -179,8 +181,8 @@ password = "password"
 
 PAM
 ---
-The PAM module uses the Pluggable Authentication Module, you will need to
-install a configuration file for it in `/etc/pam.d/screenruster`.
+This module uses the Pluggable Authentication Module for authentication, you
+will need to install a configuration file for it in `/etc/pam.d/screenruster`.
 
 ```config
 auth	include		system-auth
