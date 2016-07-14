@@ -181,7 +181,7 @@ impl Locker {
 											saver.stop().unwrap();
 										}
 										else {
-											window.unlock();
+											window.unlock().unwrap();
 										}
 									}
 								}
@@ -239,13 +239,13 @@ impl Locker {
 									window.blank();
 								}
 								else {
-									window.unlock();
+									window.unlock().unwrap();
 								}
 							}
 
 							// Unlock the stopped savers.
 							for id in &stopped {
-								windows.get_mut(id).unwrap().unlock();
+								windows.get_mut(id).unwrap().unlock().unwrap();
 								savers.remove(id);
 							}
 						}

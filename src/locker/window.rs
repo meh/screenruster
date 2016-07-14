@@ -231,6 +231,10 @@ impl Window {
 
 	/// Lock the window.
 	pub fn lock(&mut self) -> error::Result<()> {
+		if self.locked {
+			return Ok(());
+		}
+
 		unsafe {
 			// Map the window and make sure it's raised.
 			xlib::XMapRaised(self.display.id, self.id);
@@ -300,7 +304,11 @@ impl Window {
 	}
 
 	/// Unlock the window, hiding and ungrabbing whatever.
-	pub fn unlock(&mut self) {
+	pub fn unlock(&mut self) -> error::Result<()> {
+		if !self.locked {
+			return Ok(());
+		}
+
 		unsafe {
 			xlib::XUnmapWindow(self.display.id, self.id);
 			self.locked = false;
@@ -310,6 +318,8 @@ impl Window {
 
 			xlib::XUngrabPointer(self.display.id, xlib::CurrentTime);
 			self.pointer = false;
+
+			Ok(())
 		}
 	}
 }
