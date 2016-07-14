@@ -76,6 +76,7 @@ impl Locker {
 			let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
 			let mut starting = false;
 			let mut stopping = false;
+			let mut checking = false;
 			let mut password = String::new();
 			let mut event    = mem::zeroed(): xlib::XEvent;
 
@@ -164,6 +165,8 @@ impl Locker {
 								}
 
 								Request::Auth(state) => {
+									checking = false;
+
 									for saver in savers.values_mut() {
 										saver.password(if state { Password::Success } else { Password::Failure }).unwrap();
 									}
@@ -279,6 +282,11 @@ impl Locker {
 							xlib::KeyPress => {
 								sender.send(Response::Activity).unwrap();
 
+								// Ignore keyboard input while checking authentication.
+								if checking {
+									continue;
+								}
+
 								if let Some(window) = windows.values().find(|w| w.id == any.window) {
 									let mut key  = xlib::XKeyEvent::from(event);
 									let     code = key.keycode;
@@ -302,8 +310,10 @@ impl Locker {
 											}
 										}
 
-										// Send the password.
+										// Check authentication.
 										keysym::XK_Return => {
+											checking = true;
+
 											for saver in savers.values_mut() {
 												saver.password(Password::Check).unwrap();
 											}
