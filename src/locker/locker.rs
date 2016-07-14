@@ -323,17 +323,22 @@ impl Locker {
 										}
 
 										_ => {
-											let mut ic_sym = 0;
-											let mut buffer = [0u8; 16];
-											let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
-												mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-												&mut ic_sym, ptr::null_mut());
+											// Limit the maximum password length so keeping a button
+											// pressed is not going to OOM us in the extremely long
+											// run.
+											if password.len() <= 255 {
+												let mut ic_sym = 0;
+												let mut buffer = [0u8; 16];
+												let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
+													mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
+													&mut ic_sym, ptr::null_mut());
 
-											for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
-												password.push(ch);
+												for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+													password.push(ch);
 
-												for saver in savers.values_mut() {
-													saver.password(Password::Insert).unwrap();
+													for saver in savers.values_mut() {
+														saver.password(Password::Insert).unwrap();
+													}
 												}
 											}
 										}
