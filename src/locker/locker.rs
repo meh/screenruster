@@ -184,43 +184,43 @@ impl Locker {
 
 						// Check if there are any messages from savers.
 						{
-							let mut stopped  = HashSet::new();
-							let mut returned = HashSet::new();
+							let mut stopped = HashSet::new();
+							let mut exited  = HashSet::new();
 
 							for (&id, saver) in &mut savers {
-								match saver.recv() {
-									Some(saver::Response::Forward(api::Response::Initialized)) => {
-										saver.start().unwrap();
-									}
-
-									Some(saver::Response::Forward(api::Response::Started)) => {
-										if saver.was_started() {
-											// FIXME(meh): Do not crash on grab failure.
-											windows.get_mut(&id).unwrap().lock().unwrap();
+								while let Some(response) = saver.recv() {
+									match response {
+										saver::Response::Forward(api::Response::Initialized) => {
+											saver.start().unwrap();
 										}
-										else {
-											saver.kill();
+
+										saver::Response::Forward(api::Response::Started) => {
+											if saver.was_started() {
+												// FIXME(meh): Do not crash on grab failure.
+												windows.get_mut(&id).unwrap().lock().unwrap();
+											}
+											else {
+												saver.kill();
+											}
+										}
+
+										saver::Response::Forward(api::Response::Stopped) => {
+											if saver.was_stopped() {
+												stopped.insert(id);
+											}
+											else {
+												saver.kill();
+											}
+										}
+
+										saver::Response::Exit(..) => {
+											exited.insert(id);
 										}
 									}
-
-									Some(saver::Response::Forward(api::Response::Stopped)) => {
-										if saver.was_stopped() {
-											stopped.insert(id);
-										}
-										else {
-											saver.kill();
-										}
-									}
-
-									Some(saver::Response::Exit(..)) => {
-										returned.insert(id);
-									}
-
-									None => (),
 								}
 							}
 
-							for id in &returned {
+							for id in &exited {
 								stopped.remove(id);
 
 								let saver  = savers.remove(id).unwrap();
