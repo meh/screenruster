@@ -26,6 +26,29 @@ cargo install screenruster-saver-laughing_man
 
 The sample configuration file already has default settings for it.
 
+Usage
+-----
+
+First, start the daemon.
+
+```
+screenruster &
+```
+
+Then if you want to activate the screen saver manually:
+
+```
+screenruster activate
+```
+
+Or if you want to lock manually:
+
+```
+screenruster lock
+```
+
+To unlock, simply type your password and press enter.
+
 Available savers
 ================
 This is a list of available screen savers that will be updated over time, if
