@@ -60,6 +60,8 @@ pub enum Request {
 
 	GetSessionIdle,
 	GetSessionIdleTime,
+
+	PrepareForSleep(bool),
 }
 
 #[derive(Debug)]
@@ -87,19 +89,22 @@ impl Server {
 		let (i_sender, receiver) = channel();
 		let (s_sender, signals)  = channel();
 
-		thread::spawn(move || {
-			let c = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
-			c.register_name("org.gnome.ScreenSaver", 0).unwrap();
+		// Emulate gnome-screensaver DBus interface.
+		{
+			let sender = sender.clone();
 
-			let f = dbus::tree::Factory::new_fn();
+			thread::spawn(move || {
+				let c = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
+				let f = dbus::tree::Factory::new_fn();
 
-			let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
-			let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
-			let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
-			let end    = Arc::new(f.signal("AuthenticationRequestEnd"));
+				c.register_name("org.gnome.ScreenSaver", 0).unwrap();
 
-			let tree = f.tree()
-				.add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
+				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
+				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
+				let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
+				let end    = Arc::new(f.signal("AuthenticationRequestEnd"));
+
+				let tree = f.tree().add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
 					.add_m(f.method("Lock", |m, _, _| {
 						sender.send(Request::Lock).unwrap();
 
@@ -254,32 +259,57 @@ impl Server {
 					.add_s_arc(begin.clone())
 					.add_s_arc(end.clone())));
 
-			tree.set_registered(&c, true).unwrap();
+				tree.set_registered(&c, true).unwrap();
 
-			for item in tree.run(&c, c.iter(100)) {
-				if let dbus::ConnectionItem::Nothing = item {
-					while let Ok(signal) = signals.try_recv() {
-						c.send(match signal {
-							Signal::Active(status) => {
-								active.msg().append1(status)
-							}
+				for item in tree.run(&c, c.iter(100)) {
+					if let dbus::ConnectionItem::Nothing = item {
+						while let Ok(signal) = signals.try_recv() {
+							c.send(match signal {
+								Signal::Active(status) => {
+									active.msg().append1(status)
+								}
 
-							Signal::SessionIdle(status) => {
-								idle.msg().append1(status)
-							}
+								Signal::SessionIdle(status) => {
+									idle.msg().append1(status)
+								}
 
-							Signal::AuthenticationRequest(true) => {
-								begin.msg()
-							}
+								Signal::AuthenticationRequest(true) => {
+									begin.msg()
+								}
 
-							Signal::AuthenticationRequest(false) => {
-								end.msg()
-							}
-						}).unwrap();
+								Signal::AuthenticationRequest(false) => {
+									end.msg()
+								}
+							}).unwrap();
+						}
 					}
 				}
-			}
-		});
+			});
+		}
+
+		// Listen for relevant system events.
+		{
+			let sender = sender.clone();
+
+			thread::spawn(move || {
+				let c = dbus::Connection::get_private(dbus::BusType::System).unwrap();
+				c.add_match("path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'").unwrap();
+
+				for item in c.iter(1_000_000_000) {
+					if let dbus::ConnectionItem::Signal(m) = item {
+						match (&*m.interface().unwrap(), &*m.member().unwrap()) {
+							("org.freedesktop.login1.Manager", "PrepareForSleep") => {
+								if let Some(status) = m.get1() {
+									sender.send(Request::PrepareForSleep(status)).unwrap();
+								}
+							}
+
+							_ => ()
+						}
+					}
+				}
+			});
+		}
 
 		Ok(Server {
 			receiver: i_receiver,
