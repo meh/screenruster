@@ -74,8 +74,6 @@ impl Locker {
 		unsafe {
 			let mut windows  = HashMap::new(): HashMap<xlib::Window, Window>;
 			let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
-			let mut starting = false;
-			let mut stopping = false;
 			let mut checking = false;
 			let mut password = String::new();
 			let mut event    = mem::zeroed(): xlib::XEvent;
@@ -134,9 +132,6 @@ impl Locker {
 								}
 
 								Request::Start => {
-									starting = true;
-									stopping = false;
-
 									for window in windows.values_mut() {
 										if !config.saver().using().is_empty() {
 											let name = config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
@@ -173,9 +168,6 @@ impl Locker {
 								}
 
 								Request::Stop => {
-									starting = false;
-									stopping = true;
-
 									for window in windows.values_mut() {
 										if let Some(saver) = savers.get_mut(&window.id) {
 											saver.stop().unwrap();
