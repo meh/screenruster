@@ -26,6 +26,21 @@ cargo install screenruster-saver-laughing_man
 
 The sample configuration file already has default settings for it.
 
+Usage
+-----
+
+First, start the server.
+
+    screenruster
+
+Then, in a separate window, invoke the screen saver:
+
+    screenruster activate
+
+...or lock the screen. To unlock, simply type your password and press enter.
+
+    screenruster lock
+
 Available savers
 ================
 This is a list of available screen savers that will be updated over time, if
