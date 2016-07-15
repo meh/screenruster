@@ -18,7 +18,7 @@
 use std::thread;
 use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
-use std::time::{Instant, Duration};
+use std::time::{Instant, SystemTime, Duration};
 
 use error;
 use config;
@@ -30,11 +30,34 @@ pub struct Timer {
 
 #[derive(Clone, Debug)]
 pub enum Request {
+	/// Reset the specific event.
 	Reset(Event),
-	Restart,
+
+	/// Requests a report on all the timers.
 	Report {
 		id: u64,
-	}
+	},
+
+	/// Suspend the timers.
+	Suspend(SystemTime),
+
+	/// Resume the timers.
+	Resume,
+
+	/// The screen was blanked.
+	Blanked,
+
+	/// The screen was unblanked.
+	Unblanked,
+
+	/// The screen saver was started.
+	Started,
+
+	/// The screen was locked.
+	Locked,
+
+	/// The screen saver was stopped, restarts all timers.
+	Stopped,
 }
 
 #[derive(Clone, Debug)]
@@ -45,12 +68,6 @@ pub enum Event {
 
 #[derive(Clone, Debug)]
 pub enum Response {
-	Heartbeat,
-
-	Start,
-	Lock,
-	Blank,
-
 	Report {
 		id:        u64,
 		beat:      Instant,
@@ -59,7 +76,16 @@ pub enum Response {
 		locked:    Option<Instant>,
 		blanked:   Option<Instant>,
 		unblanked: Option<Instant>,
-	}
+	},
+
+	Suspended(SystemTime),
+	Resumed,
+
+	Heartbeat,
+
+	Start,
+	Lock,
+	Blank,
 }
 
 impl Timer {
@@ -86,31 +112,28 @@ impl Timer {
 			// Instant to check when the screen was unblanked.
 			let mut unblanked = None: Option<Instant>;
 
+			// Instant to check when the timer was suspended.
+			let mut suspended = None: Option<SystemTime>;
+
+			// Time correction for suspension.
+			let mut correction = 0;
+
+			// Whether a correction loop has already been done.
+			let mut corrected = false;
+
 			loop {
 				thread::sleep(Duration::from_secs(1));
 
 				while let Ok(request) = receiver.try_recv() {
 					match request {
 						Request::Reset(Event::Idle) => {
-							// If the saver has not started refresh the idle time.
-							if started.is_none() {
-								idle = Instant::now();
-							}
+							idle       = Instant::now();
+							correction = 0;
 						}
 
 						Request::Reset(Event::Blank) => {
 							blanked   = None;
 							unblanked = Some(Instant::now());
-						}
-
-						Request::Restart => {
-							// If the saver was started reset guards to initial state.
-							if started.is_some() {
-								idle    = Instant::now();
-								started = None;
-								locked  = None;
-								blanked = None;
-							}
 						}
 
 						Request::Report { id } => {
@@ -124,6 +147,41 @@ impl Timer {
 								unblanked: unblanked,
 							}).unwrap();
 						}
+
+						Request::Suspend(time) => {
+							suspended = Some(time);
+							sender.send(Response::Suspended(time)).unwrap();
+						}
+
+						Request::Resume => {
+							correction = suspended.take().unwrap().elapsed().unwrap_or(Duration::from_secs(0)).as_secs();
+							corrected  = false;
+						}
+
+						Request::Blanked => {
+							blanked = Some(Instant::now());
+						}
+
+						Request::Unblanked => {
+							blanked   = None;
+							unblanked = Some(Instant::now());
+						}
+
+						Request::Started => {
+							started = Some(Instant::now());
+						}
+
+						Request::Locked => {
+							locked = Some(Instant::now());
+						}
+
+						Request::Stopped => {
+							idle       = Instant::now();
+							started    = None;
+							locked     = None;
+							blanked    = None;
+							correction = 0;
+						}
 					}
 				}
 
@@ -133,38 +191,36 @@ impl Timer {
 					sender.send(Response::Heartbeat).unwrap();
 				}
 
-				// If the screen saver has been started.
-				if let Some(start) = started {
-					// If the screen is not locked.
-					if locked.is_none() {
-						// If locking is enabled.
-						if let Some(after) = config.lock {
-							// If it's time to lock, send the message and enable the lock guard.
-							if start.elapsed().as_secs() >= after as u64 {
-								locked = Some(Instant::now());
-								sender.send(Response::Lock).unwrap();
-							}
-						}
-					}
+				// Do not check events if the timers are suspended.
+				if suspended.is_some() {
+					continue;
 				}
-				else {
-					// If the system has been idle long enough send the message.
-					if idle.elapsed().as_secs() >= config.timeout as u64 {
-						sender.send(Response::Start).unwrap();
-						started = Some(Instant::now());
+
+				// If blanking is enabled and the screen is not already blanked.
+				if let (Some(after), false) = (config.blank, blanked.is_some()) {
+					if unblanked.unwrap_or(idle).elapsed().as_secs() + correction >= after as u64 {
+						sender.send(Response::Blank).unwrap();
+						blanked = Some(Instant::now());
 					}
 				}
 
-				// If the screen is not blanked.
-				if blanked.is_none() {
-					// If blanking is enabled.
-					if let Some(after) = config.blank {
-						// If it's time to blank, send the message and enable the blank guard.
-						if unblanked.unwrap_or(idle).elapsed().as_secs() >= after as u64 {
-							blanked = Some(Instant::now());
-							sender.send(Response::Blank).unwrap();
-						}
+				// If the system has been idle long enough send the message.
+				if started.is_none() && idle.elapsed().as_secs() + correction >= config.timeout as u64 {
+					sender.send(Response::Start).unwrap();
+					started = Some(Instant::now());
+				}
+
+				// If the screen saver has been started, the screen is not locked and locking is enabled.
+				if let (Some(start), Some(after), false) = (started, config.lock, locked.is_some()) {
+					if start.elapsed().as_secs() + correction >= after as u64 {
+						sender.send(Response::Lock).unwrap();
+						locked = Some(Instant::now());
 					}
+				}
+
+				if !corrected {
+					sender.send(Response::Resumed).unwrap();
+					corrected = true;
 				}
 			}
 		});
@@ -179,12 +235,36 @@ impl Timer {
 		self.sender.send(Request::Reset(event))
 	}
 
-	pub fn restart(&self) -> Result<(), SendError<Request>> {
-		self.sender.send(Request::Restart)
-	}
-
 	pub fn report(&self, id: u64) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Report { id: id })
+	}
+
+	pub fn suspend(&self, value: SystemTime) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Suspend(value))
+	}
+
+	pub fn resume(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Resume)
+	}
+
+	pub fn blanked(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Blanked)
+	}
+
+	pub fn unblanked(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Unblanked)
+	}
+
+	pub fn started(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Started)
+	}
+
+	pub fn locked(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Locked)
+	}
+
+	pub fn stopped(&self) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Stopped)
 	}
 }
 

@@ -27,9 +27,9 @@ use error;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-	timer:  Timer,
-	server: Server,
 	locker: Locker,
+	server: Server,
+	timer:  Timer,
 	auth:   Auth,
 	saver:  Saver,
 }
@@ -70,6 +70,34 @@ impl Default for Server {
 pub struct Locker {
 	pub display: Option<String>,
 	pub dpms:    bool,
+
+	pub on_suspend: OnSuspend,
+	pub on_resume:  OnResume,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum OnSuspend {
+	Ignore,
+	UseSystemTime,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum OnResume {
+	Ignore,
+	Activate,
+	Lock,
+}
+
+impl Default for OnSuspend {
+	fn default() -> OnSuspend {
+		OnSuspend::Ignore
+	}
+}
+
+impl Default for OnResume {
+	fn default() -> OnResume {
+		OnResume::Ignore
+	}
 }
 
 impl Default for Locker {
@@ -77,6 +105,9 @@ impl Default for Locker {
 		Locker {
 			display: None,
 			dpms:    true,
+
+			on_suspend: Default::default(),
+			on_resume:  Default::default(),
 		}
 	}
 }
@@ -108,24 +139,39 @@ impl Config {
 		};
 
 		Ok(Config {
-			timer: {
-				let mut config = Timer::default();
+			locker: {
+				let mut config = Locker::default();
 
-				if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
-					if let Some(value) = table.get("beat").and_then(|v| v.as_integer()) {
-						config.beat = value as u32;
+				if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
+					if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
+						config.display = Some(value.into());
 					}
 
-					if let Some(value) = table.get("timeout").and_then(|v| v.as_integer()) {
-						config.timeout = value as u32;
+					if let Some(false) = table.get("dpms").and_then(|v| v.as_bool()) {
+						config.dpms = false;
 					}
 
-					if let Some(value) = table.get("lock").and_then(|v| v.as_integer()) {
-						config.lock = Some(value as u32);
+					if let Some(value) = table.get("on-suspend").and_then(|v| v.as_str()) {
+						config.on_suspend = match value {
+							"use-system-time" =>
+								OnSuspend::UseSystemTime,
+
+							_ =>
+								Default::default()
+						}
 					}
 
-					if let Some(value) = table.get("blank").and_then(|v| v.as_integer()) {
-						config.blank = Some(value as u32);
+					if let Some(value) = table.get("on-resume").and_then(|v| v.as_str()) {
+						config.on_resume = match value {
+							"lock" =>
+								OnResume::Lock,
+
+							"activate" =>
+								OnResume::Activate,
+
+							_ =>
+								Default::default()
+						}
 					}
 				}
 
@@ -144,16 +190,24 @@ impl Config {
 				config
 			},
 
-			locker: {
-				let mut config = Locker::default();
+			timer: {
+				let mut config = Timer::default();
 
-				if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
-					if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
-						config.display = Some(value.into());
+				if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
+					if let Some(value) = table.get("beat").and_then(|v| v.as_integer()) {
+						config.beat = value as u32;
 					}
 
-					if let Some(false) = table.get("dpms").and_then(|v| v.as_bool()) {
-						config.dpms = false;
+					if let Some(value) = table.get("timeout").and_then(|v| v.as_integer()) {
+						config.timeout = value as u32;
+					}
+
+					if let Some(value) = table.get("lock").and_then(|v| v.as_integer()) {
+						config.lock = Some(value as u32);
+					}
+
+					if let Some(value) = table.get("blank").and_then(|v| v.as_integer()) {
+						config.blank = Some(value as u32);
 					}
 				}
 

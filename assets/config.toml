@@ -6,6 +6,20 @@
 # Whether to take control of DPMS settings or not.
 dpms = true
 
+# What to do on suspension.
+#
+# - "ignore" will do nothing.
+# - "use-system-time" will try to use system time to correct the monotonic
+#   timers.
+on-suspend = "use-system-time"
+
+# What to do coming out of suspension.
+#
+# - "ignore" will do nothing.
+# - "activate" will activate the screen saver.
+# - "lock" will lock the screen.
+on-resume  = "ignore"
+
 # DBus related settings.
 [server]
 # A list of types of messages to ignore.

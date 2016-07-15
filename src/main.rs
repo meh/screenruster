@@ -214,7 +214,7 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 }
 
 fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
-	use std::time::Instant;
+	use std::time::{Instant, SystemTime};
 	use std::collections::HashSet;
 	use rand::{self, Rng};
 
@@ -246,9 +246,10 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let server = Server::spawn(config.server().clone())?;
 	let locker = Locker::spawn(config.clone())?;
 
-	let mut locked  = None: Option<Instant>;
-	let mut started = None: Option<Instant>;
-	let mut blanked = None: Option<Instant>;
+	let mut locked    = None: Option<Instant>;
+	let mut started   = None: Option<Instant>;
+	let mut blanked   = None: Option<Instant>;
+	let mut suspended = None: Option<SystemTime>;
 
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
@@ -257,30 +258,34 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 		(blank) => (
 			blanked = Some(Instant::now());
 			locker.power(false).unwrap();
+			timer.blanked().unwrap();
 		);
 
 		(unblank) => (
 			blanked = None;
 			locker.power(true).unwrap();
+			timer.unblanked().unwrap();
 		);
 
 		(start) => (
 			started = Some(Instant::now());
 			locker.start().unwrap();
 			server.signal(server::Signal::Active(true)).unwrap();
+			timer.started().unwrap();
 		);
 
 		(lock) => (
 			locked = Some(Instant::now());
 			locker.lock().unwrap();
+			timer.locked().unwrap();
 		);
 
 		(stop) => (
 			started = None;
 			locked  = None;
 			locker.stop().unwrap();
-			timer.restart().unwrap();
 			server.signal(server::Signal::Active(false)).unwrap();
+			timer.stopped().unwrap();
 		);
 
 		(auth < $value:expr) => (
@@ -317,6 +322,10 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					// On system activity.
 					locker::Response::Activity => {
+						if suspended.is_some() {
+							continue;
+						}
+
 						// Always reset the blank timer.
 						timer.reset(timer::Event::Blank).unwrap();
 
@@ -369,7 +378,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						}
 					}
 
-					// Cycle is unsupported.
+					// TODO: Implement cycling.
 					server::Request::Cycle => (),
 
 					server::Request::SimulateUserActivity => {
@@ -428,6 +437,40 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					server::Request::GetSessionIdleTime => {
 						timer.report(GET_SESSION_IDLE_TIME).unwrap();
 					}
+
+					server::Request::PrepareForSleep(time) => {
+						if let Some(time) = time {
+							match config.locker().on_suspend {
+								config::OnSuspend::Ignore => (),
+
+								config::OnSuspend::UseSystemTime => {
+									timer.suspend(time).unwrap();
+								}
+							}
+						}
+						else {
+							match config.locker().on_suspend {
+								config::OnSuspend::Ignore => (),
+
+								config::OnSuspend::UseSystemTime => {
+									timer.resume().unwrap();
+								}
+							}
+
+							match config.locker().on_resume {
+								config::OnResume::Ignore => (),
+
+								config::OnResume::Activate => {
+									act!(start);
+								}
+
+								config::OnResume::Lock => {
+									act!(start);
+									act!(lock);
+								}
+							}
+						}
+					}
 				}
 			},
 
@@ -450,6 +493,14 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						unreachable!();
 					}
 
+					timer::Response::Suspended(time) => {
+						suspended = Some(time);
+					}
+
+					timer::Response::Resumed => {
+						suspended = None;
+					}
+
 					timer::Response::Heartbeat => {
 						locker.sanitize().unwrap();
 					}
@@ -459,7 +510,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							act!(start);
 						}
 						else {
-							timer.reset(timer::Event::Idle).unwrap();
+							timer.stopped().unwrap();
 						}
 					}
 
@@ -472,7 +523,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							act!(blank);
 						}
 						else {
-							timer.reset(timer::Event::Blank).unwrap();
+							timer.unblanked().unwrap();
 						}
 					}
 				}

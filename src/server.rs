@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::time::SystemTime;
 use std::thread;
 use std::sync::Arc;
 use std::ops::Deref;
@@ -61,7 +62,7 @@ pub enum Request {
 	GetSessionIdle,
 	GetSessionIdleTime,
 
-	PrepareForSleep(bool),
+	PrepareForSleep(Option<SystemTime>),
 }
 
 #[derive(Debug)]
@@ -300,7 +301,8 @@ impl Server {
 						match (&*m.interface().unwrap(), &*m.member().unwrap()) {
 							("org.freedesktop.login1.Manager", "PrepareForSleep") => {
 								if let Some(status) = m.get1() {
-									sender.send(Request::PrepareForSleep(status)).unwrap();
+									sender.send(Request::PrepareForSleep(
+										if status { Some(SystemTime::now()) } else { None })).unwrap();
 								}
 							}
 
