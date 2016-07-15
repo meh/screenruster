@@ -95,6 +95,14 @@ fn main() {
 				.required(true)
 				.index(1)
 				.help("The previously returned cookie.")))
+		.subcommand(SubCommand::with_name("suspend")
+			.about("Prepare the saver for suspension."))
+		.subcommand(SubCommand::with_name("resume")
+			.about("Prepare the saver for resuming from suspension.")
+			.arg(Arg::with_name("COOKIE")
+				.required(true)
+				.index(1)
+				.help("The previously returned cookie.")))
 		.get_matches();
 
 	let config = Config::load(&matches).unwrap();
@@ -120,6 +128,13 @@ fn main() {
 	else if let Some(submatches) = matches.subcommand_matches("unthrottle") {
 		unthrottle(submatches.clone(), config).unwrap();
 	}
+	else if let Some(submatches) = matches.subcommand_matches("suspend") {
+		suspend(submatches.clone(), config).unwrap();
+	}
+	else if let Some(submatches) = matches.subcommand_matches("resume") {
+		resume(submatches.clone(), config).unwrap();
+	}
+
 	else {
 		daemon(matches.clone(), config).unwrap();
 	}
@@ -213,6 +228,33 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
+fn suspend(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
+		.send_with_reply_and_block(dbus::Message::new_method_call(
+			"org.rust.ScreenSaver",
+			"/org/rust/ScreenSaver",
+			"org.rust.ScreenSaver",
+			"Suspend")?
+				.append2("screenruster", "requested by user")
+			, 5_000)?;
+
+	println!("{}", reply.get1::<u32>().unwrap());
+
+	Ok(())
+}
+
+fn resume(matches: ArgMatches, _config: Config) -> error::Result<()> {
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(dbus::Message::new_method_call(
+			"org.rust.ScreenSaver",
+			"/org/rust/ScreenSaver",
+			"org.rust.ScreenSaver",
+			"Resume")?
+				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
+
+	Ok(())
+}
+
 fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	use std::time::{Instant, SystemTime};
 	use std::collections::HashSet;
@@ -253,6 +295,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
+	let mut suspenders = HashSet::new();
 
 	macro_rules! act {
 		(blank) => (
@@ -438,13 +481,31 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						timer.report(GET_SESSION_IDLE_TIME).unwrap();
 					}
 
+					server::Request::Suspend { .. } => {
+						if suspenders.is_empty() && suspended.is_none() {
+							timer.suspend(SystemTime::now()).unwrap();
+						}
+
+						server.response(server::Response::Suspend(insert(&mut suspenders))).unwrap();
+					}
+
+					server::Request::Resume(cookie) => {
+						suspenders.remove(&cookie);
+
+						if suspenders.is_empty() && suspended.is_some() {
+							timer.resume().unwrap();
+						}
+					}
+
 					server::Request::PrepareForSleep(time) => {
 						if let Some(time) = time {
 							match config.locker().on_suspend {
 								config::OnSuspend::Ignore => (),
 
 								config::OnSuspend::UseSystemTime => {
-									timer.suspend(time).unwrap();
+									if suspenders.is_empty() {
+										timer.suspend(time).unwrap();
+									}
 								}
 							}
 						}
@@ -453,7 +514,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 								config::OnSuspend::Ignore => (),
 
 								config::OnSuspend::UseSystemTime => {
-									timer.resume().unwrap();
+									if suspenders.is_empty() {
+										timer.resume().unwrap();
+									}
 								}
 							}
 
