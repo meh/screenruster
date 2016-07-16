@@ -20,17 +20,6 @@ use std::ffi::CString;
 
 use libc::c_char;
 
-macro_rules! json {
-	($body:expr) => (
-		if let Some(value) = $body {
-			value
-		}
-		else {
-			continue;
-		}
-	);
-}
-
 pub trait DurationExt {
 	fn as_msecs(&self) -> u64;
 	fn as_nanosecs(&self) -> u64;

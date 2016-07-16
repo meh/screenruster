@@ -24,10 +24,20 @@ use std::sync::mpsc::{Receiver, TryRecvError, Sender, SendError, channel};
 
 use toml;
 use log;
-use api;
+use api::{self, json};
 pub use api::{Password, Pointer};
 
-use api::json;
+macro_rules! json {
+	($body:expr) => (
+		if let Some(value) = $body {
+			value
+		}
+		else {
+			continue;
+		}
+	);
+}
+
 use error;
 
 pub struct Saver {
