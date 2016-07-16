@@ -256,12 +256,14 @@ impl Config {
 }
 
 impl Auth {
+	/// Get the configuration for a specific authorization module.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}
 }
 
 impl Saver {
+	/// List of savers being used.
 	pub fn using(&self) -> Vec<&str> {
 		self.0.get("use").and_then(|v| v.as_slice())
 			.unwrap_or(&[])
@@ -271,10 +273,12 @@ impl Saver {
 			.collect()
 	}
 
+	/// Whether throttling is enabled by default.
 	pub fn throttle(&self) -> bool {
 		self.0.get("throttle").and_then(|v| v.as_bool()).unwrap_or(false)
 	}
 
+	/// Get the configuration for a specific saver.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}

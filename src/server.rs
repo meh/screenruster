@@ -105,6 +105,8 @@ impl Server {
 
 			thread::spawn(move || {
 				let c = dbus::Connection::get_private(dbus::BusType::System).unwrap();
+
+				// Watch signals from SystemD for system suspend/resume.
 				c.add_match("path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'").unwrap();
 
 				for item in c.iter(1_000_000_000) {

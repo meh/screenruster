@@ -164,6 +164,7 @@ impl Window {
 		}
 	}
 
+	/// Resize the window.
 	pub fn resize(&mut self, width: u32, height: u32) {
 		unsafe {
 			if self.width == width && self.height == height {
@@ -178,7 +179,7 @@ impl Window {
 		}
 	}
 
-	/// Grab the given entity.
+	/// Grab the given input.
 	fn grab(&self, grab: Grab) -> error::Result<()> {
 		unsafe {
 			let result = match grab {
@@ -215,7 +216,7 @@ impl Window {
 		}
 	}
 
-	/// Try to grab the given entity with 1ms pauses.
+	/// Try to grab the given input with 1ms pauses.
 	fn try_grab(&self, grab: Grab, tries: usize) -> error::Result<()> {
 		let mut result = Ok(());
 

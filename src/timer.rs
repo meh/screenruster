@@ -218,6 +218,8 @@ impl Timer {
 					}
 				}
 
+				// Only resume after one corrected loop, this avoids activities right
+				// after resume cancelling timer events.
 				if !corrected {
 					sender.send(Response::Resumed).unwrap();
 					corrected = true;

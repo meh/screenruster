@@ -268,6 +268,7 @@ impl Saver {
 		}
 	}
 
+	/// Send the API request.
 	fn send(&mut self, request: api::Request) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Forward(request))
 	}
