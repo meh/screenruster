@@ -231,9 +231,9 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 fn suspend(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
 		.send_with_reply_and_block(dbus::Message::new_method_call(
-			"org.rust.ScreenSaver",
-			"/org/rust/ScreenSaver",
-			"org.rust.ScreenSaver",
+			"meh.rust.ScreenSaver",
+			"/meh/rust/ScreenSaver",
+			"meh.rust.ScreenSaver",
 			"Suspend")?
 				.append2("screenruster", "requested by user")
 			, 5_000)?;
@@ -246,9 +246,9 @@ fn suspend(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 fn resume(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
-			"org.rust.ScreenSaver",
-			"/org/rust/ScreenSaver",
-			"org.rust.ScreenSaver",
+			"meh.rust.ScreenSaver",
+			"/meh/rust/ScreenSaver",
+			"meh.rust.ScreenSaver",
 			"Resume")?
 				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
 

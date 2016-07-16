@@ -133,7 +133,7 @@ impl Server {
 				let f = dbus::tree::Factory::new_fn();
 
 				c.register_name("org.gnome.ScreenSaver", 0).unwrap();
-				c.register_name("org.rust.ScreenSaver", 0).unwrap();
+				c.register_name("meh.rust.ScreenSaver", 0).unwrap();
 
 				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
 				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
@@ -142,7 +142,7 @@ impl Server {
 
 				let tree = f.tree()
 					// ScreenRuster interface.
-					.add(f.object_path("/org/rust/ScreenSaver").introspectable().add(f.interface("org.rust.ScreenSaver")
+					.add(f.object_path("/meh/rust/ScreenSaver").introspectable().add(f.interface("meh.rust.ScreenSaver")
 						.add_m(f.method("Suspend", |m, _, _| {
 							if config.ignore.contains("suspend") {
 								return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
