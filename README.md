@@ -49,6 +49,33 @@ screenruster lock
 
 To unlock, simply type your password and press enter.
 
+Authorization
+=============
+Authorization is handled by various modules, each module tries to authenticate, the first
+successful authentication unlocks the screen.
+
+Internal
+--------
+The internal module uses a password specified in the configuration file, this
+was initially made for testing, and you should probably not use it.
+
+```toml
+[auth.internal]
+password = "password"
+```
+
+PAM
+---
+This module uses the Pluggable Authentication Module for authentication, you
+will need to install a configuration file for it in `/etc/pam.d/screenruster`.
+
+```config
+auth	include		system-auth
+```
+
+If you want PAM account management to be respected, make sure to build with the
+`auth-pam-accounts` feature.
+
 Available savers
 ================
 This is a list of available screen savers that will be updated over time, if
@@ -186,30 +213,3 @@ saver started its rendering, it tells the daemon it can show the window.
 
 The stopped response is sent after a `stop` request has been received and the
 saver stopped its rendering, it tells the daemon it can hide the window.
-
-Authorization
-=============
-Authorization is handled by various modules, each module tries to authenticate, the first
-successful authentication unlocks the screen.
-
-Internal
---------
-The internal module uses a password specified in the configuration file, this
-was initially made for testing, and you should probably not use it.
-
-```toml
-[auth.internal]
-password = "password"
-```
-
-PAM
----
-This module uses the Pluggable Authentication Module for authentication, you
-will need to install a configuration file for it in `/etc/pam.d/screenruster`.
-
-```config
-auth	include		system-auth
-```
-
-If you want PAM account management to be respected, make sure to build with the
-`auth-pam-accounts` feature.
