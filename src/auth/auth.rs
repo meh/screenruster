@@ -85,8 +85,8 @@ impl Auth {
 		})
 	}
 
-	pub fn authenticate<S: AsRef<str>>(&self, password: S) -> Result<(), SendError<Request>> {
-		self.sender.send(Request::Authenticate(password.as_ref().to_string()))
+	pub fn authenticate<S: Into<String>>(&self, password: S) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Authenticate(password.into()))
 	}
 }
 
