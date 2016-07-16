@@ -100,6 +100,9 @@ impl Window {
 					xlib::InputOutput as c_uint, (*info).visual, mask, &mut attrs)
 			};
 
+			// Make sure the window background is black, this does not clear the window.
+			xlib::XSetWindowBackground(display.id, id, black);
+
 			// Set window property to mark the window as ours.
 			xlib::XChangeProperty(display.id, id, display.atoms.saver, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
 				&xlib::True as *const _ as *const _, 1);
