@@ -298,6 +298,22 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 	let mut suspenders = HashSet::new();
 
 	macro_rules! act {
+		(suspend) => (
+			act!(suspend SystemTime::now())
+		);
+
+		(suspend $time:expr) => (
+			if suspenders.is_empty() && suspended.is_none() {
+				timer.suspend($time).unwrap();
+			}
+		);
+
+		(resume) => (
+			if suspenders.is_empty() && suspended.is_some() {
+				timer.resume().unwrap();
+			}
+		);
+
 		(blank) => (
 			blanked = Some(Instant::now());
 			locker.power(false).unwrap();
@@ -486,9 +502,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Suspend { .. } => {
-						if suspenders.is_empty() && suspended.is_none() {
-							timer.suspend(SystemTime::now()).unwrap();
-						}
+						act!(suspend);
 
 						server.response(server::Response::Suspend(insert(&mut suspenders))).unwrap();
 					}
@@ -497,9 +511,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 						if suspenders.contains(&cookie) {
 							suspenders.remove(&cookie);
 
-							if suspenders.is_empty() && suspended.is_some() {
-								timer.resume().unwrap();
-							}
+							act!(resume);
 						}
 					}
 
@@ -509,9 +521,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 								config::OnSuspend::Ignore => (),
 
 								config::OnSuspend::UseSystemTime => {
-									if suspenders.is_empty() {
-										timer.suspend(time).unwrap();
-									}
+									act!(suspend time);
 								}
 							}
 						}
@@ -520,9 +530,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 								config::OnSuspend::Ignore => (),
 
 								config::OnSuspend::UseSystemTime => {
-									if suspenders.is_empty() {
-										timer.resume().unwrap();
-									}
+									act!(resume);
 								}
 							}
 
