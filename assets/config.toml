@@ -26,6 +26,7 @@ on-resume  = "ignore"
 #
 # - "inhibit" will ignore screen saver inhibition requests.
 # - "throttle" will ignore screen saver throttling requests.
+# - "suspend" will ignore timer suspension requests.
 #
 # ignore = ["inhibit", "throttle"]
 
@@ -44,7 +45,7 @@ lock = 0
 
 # How many seconds to wait before blanking the screen.
 #
-# `false` just makes it never blank.
+# `false` makes it never blank.
 blank = false
 
 # General screen saver settings.
