@@ -220,8 +220,8 @@ impl Display {
 				let mut after  = mem::zeroed();
 				let mut values = mem::zeroed();
 
-				try!(xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
-					&mut kind, &mut format, &mut count, &mut after, &mut values));
+				xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
+					&mut kind, &mut format, &mut count, &mut after, &mut values);
 
 				if kind == xlib::XA_CARDINAL {
 					return;
