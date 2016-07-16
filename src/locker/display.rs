@@ -59,8 +59,12 @@ impl Extension {
 	}
 }
 
-unsafe extern "C" fn ignore(_display: *mut xlib::Display, _error: *mut xlib::XErrorEvent) -> c_int {
-	0
+macro_rules! try {
+	($body:expr) => (
+		if $body != xlib::True {
+			return;
+		}
+	);
 }
 
 unsafe extern "C" fn report(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
@@ -201,55 +205,47 @@ impl Display {
 	/// Observe events on the given window and all its children.
 	pub fn observe(&self, window: xlib::Window) {
 		unsafe {
-			let old = xlib::XSetErrorHandler(Some(ignore));
-			self._observe(window);
-			xlib::XSetErrorHandler(old);
-		}
-	}
+			let mut root     = mem::zeroed();
+			let mut parent   = mem::zeroed();
+			let mut children = mem::zeroed();
+			let mut count    = mem::zeroed();
 
-	unsafe fn _observe(&self, window: xlib::Window) {
-		let mut root     = mem::zeroed();
-		let mut parent   = mem::zeroed();
-		let mut children = mem::zeroed();
-		let mut count    = mem::zeroed();
+			try!(xlib::XQueryTree(self.id, window, &mut root, &mut parent, &mut children, &mut count));
 
-		if xlib::XQueryTree(self.id, window, &mut root, &mut parent, &mut children, &mut count) != xlib::True {
-			return;
-		}
+			// Return if the window is one of ours.
+			{
+				let mut kind   = mem::zeroed();
+				let mut format = mem::zeroed();
+				let mut count  = mem::zeroed();
+				let mut after  = mem::zeroed();
+				let mut values = mem::zeroed();
 
-		// Return if the window is one of ours.
-		{
-			let mut kind   = mem::zeroed();
-			let mut format = mem::zeroed();
-			let mut count  = mem::zeroed();
-			let mut after  = mem::zeroed();
-			let mut values = mem::zeroed();
+				try!(xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
+					&mut kind, &mut format, &mut count, &mut after, &mut values));
 
-			xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
-				&mut kind, &mut format, &mut count, &mut after, &mut values);
-
-			if kind == xlib::XA_CARDINAL {
-				return;
-			}
-		}
-
-		let mut attrs = mem::zeroed();
-		xlib::XGetWindowAttributes(self.id, window, &mut attrs);
-
-		// Listen to key press and release only if the window is not already listening for them, so we do not
-		// steal their keys.
-		//
-		// Listen for pointer motion events and window changes.
-		xlib::XSelectInput(self.id, window, (attrs.all_event_masks | attrs.do_not_propagate_mask) &
-			(xlib::KeyPressMask | xlib::KeyReleaseMask) |
-			(xlib::PointerMotionMask | xlib::SubstructureNotifyMask));
-
-		if !children.is_null() && count > 0 {
-			for i in 0 .. count {
-				self._observe(*children.offset(i as isize));
+				if kind == xlib::XA_CARDINAL {
+					return;
+				}
 			}
 
-			xlib::XFree(children as *mut _);
+			let mut attrs = mem::zeroed();
+			try!(xlib::XGetWindowAttributes(self.id, window, &mut attrs));
+
+			// Listen to key press and release only if the window is not already listening for them, so we do not
+			// steal their keys.
+			//
+			// Listen for pointer motion events and window changes.
+			try!(xlib::XSelectInput(self.id, window, (attrs.all_event_masks | attrs.do_not_propagate_mask) &
+				(xlib::KeyPressMask | xlib::KeyReleaseMask) |
+				(xlib::PointerMotionMask | xlib::SubstructureNotifyMask)));
+
+			if !children.is_null() && count > 0 {
+				for i in 0 .. count {
+					self.observe(*children.offset(i as isize));
+				}
+
+				xlib::XFree(children as *mut _);
+			}
 		}
 	}
 }
