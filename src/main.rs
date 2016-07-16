@@ -433,7 +433,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::UnInhibit(cookie) => {
-						inhibitors.remove(&cookie);
+						if inhibitors.contains(&cookie) {
+							inhibitors.remove(&cookie);
+						}
 					}
 
 					server::Request::Throttle { .. } => {
@@ -445,10 +447,12 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::UnThrottle(cookie) => {
-						throttlers.remove(&cookie);
+						if throttlers.contains(&cookie) {
+							throttlers.remove(&cookie);
 
-						if throttlers.is_empty() && !config.saver().throttle() {
-							locker.throttle(false).unwrap();
+							if throttlers.is_empty() && !config.saver().throttle() {
+								locker.throttle(false).unwrap();
+							}
 						}
 					}
 
@@ -490,10 +494,12 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					}
 
 					server::Request::Resume(cookie) => {
-						suspenders.remove(&cookie);
+						if suspenders.contains(&cookie) {
+							suspenders.remove(&cookie);
 
-						if suspenders.is_empty() && suspended.is_some() {
-							timer.resume().unwrap();
+							if suspenders.is_empty() && suspended.is_some() {
+								timer.resume().unwrap();
+							}
 						}
 					}
 
