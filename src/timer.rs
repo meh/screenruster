@@ -154,8 +154,8 @@ impl Timer {
 						}
 
 						Request::Resume => {
-							correction = suspended.take().unwrap().elapsed().unwrap_or(Duration::from_secs(0)).as_secs();
-							corrected  = false;
+							correction += suspended.take().unwrap().elapsed().unwrap_or(Duration::from_secs(0)).as_secs();
+							corrected   = false;
 						}
 
 						Request::Blanked => {
@@ -198,7 +198,7 @@ impl Timer {
 
 				// If blanking is enabled and the screen is not already blanked.
 				if let (Some(after), false) = (config.blank, blanked.is_some()) {
-					if unblanked.unwrap_or(idle).elapsed().as_secs() + correction >= after as u64 {
+					if unblanked.unwrap_or(idle).elapsed().as_secs() >= after as u64 {
 						sender.send(Response::Blank).unwrap();
 						blanked = Some(Instant::now());
 					}
