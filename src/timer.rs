@@ -131,7 +131,7 @@ impl Timer {
 							correction = 0;
 						}
 
-						Request::Reset(Event::Blank) => {
+						Request::Reset(Event::Blank) | Request::Unblanked => {
 							blanked   = None;
 							unblanked = Some(Instant::now());
 						}
@@ -160,11 +160,6 @@ impl Timer {
 
 						Request::Blanked => {
 							blanked = Some(Instant::now());
-						}
-
-						Request::Unblanked => {
-							blanked   = None;
-							unblanked = Some(Instant::now());
 						}
 
 						Request::Started => {
