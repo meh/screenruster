@@ -310,11 +310,11 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 		(resume) => (
 			if suspenders.is_empty() && suspended.is_some() {
-				timer.resume().unwrap();
-			}
+				if blanked.is_some() {
+					act!(unblank);
+				}
 
-			if blanked.is_some() {
-				act!(unblank);
+				timer.resume().unwrap();
 			}
 		);
 
