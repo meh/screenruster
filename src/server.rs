@@ -34,41 +34,58 @@ pub struct Server {
 
 #[derive(Debug)]
 pub enum Request {
+	/// Lock the screen.
 	Lock,
 
+	/// Cycle the saver.
 	Cycle,
 
+	/// Simulate user activity.
 	SimulateUserActivity,
 
+	/// Inhibit the starting of screen saving.
 	Inhibit {
 		application: String,
 		reason:      String,
 	},
 
+	/// Remove a previous Inhibit.
 	UnInhibit(u32),
 
+	/// Throttle the resource usage of the screen saving.
 	Throttle {
 		application: String,
 		reason:      String,
 	},
 
+	/// Remove a previous Throttle.
 	UnThrottle(u32),
 
-	SetActive(bool),
-
-	GetActive,
-	GetActiveTime,
-
-	GetSessionIdle,
-	GetSessionIdleTime,
-
+	/// Suspend any screen saver activity.
 	Suspend {
 		application: String,
 		reason:      String,
 	},
 
+	/// Remove a previous Suspend.
 	Resume(u32),
 
+	/// Change the active status of the screen saver.
+	SetActive(bool),
+
+	/// Get the active status of the screen saver.
+	GetActive,
+
+	/// Get how many seconds the screen saver has been active.
+	GetActiveTime,
+
+	/// Get the idle status of the session.
+	GetSessionIdle,
+
+	/// Get how many seconds the session has been idle.
+	GetSessionIdleTime,
+
+	/// The system is preparing for sleep or coming out of sleep.
 	PrepareForSleep(Option<SystemTime>),
 }
 
@@ -76,14 +93,13 @@ pub enum Request {
 pub enum Response {
 	Inhibit(u32),
 	Throttle(u32),
+	Suspend(u32),
 
 	Active(bool),
 	ActiveTime(u64),
 
 	SessionIdle(bool),
 	SessionIdleTime(u64),
-
-	Suspend(u32),
 }
 
 #[derive(Debug)]
