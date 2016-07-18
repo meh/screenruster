@@ -30,10 +30,16 @@ pub enum Error {
 	Unknown,
 	Parse,
 
+	DBus(DBus),
 	Locker(Locker),
 	Grab(Grab),
 	Auth(Auth),
-	DBus(dbus::Error),
+}
+
+#[derive(Debug)]
+pub enum DBus {
+	AlreadyRegistered,
+	Internal(dbus::Error),
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -95,6 +101,17 @@ impl From<()> for Error {
 	}
 }
 
+impl From<dbus::Error> for Error {
+	fn from(value: dbus::Error) -> Self {
+		Error::DBus(DBus::Internal(value))
+	}
+}
+
+impl From<DBus> for Error {
+	fn from(value: DBus) -> Self {
+		Error::DBus(value)
+	}
+}
 
 impl From<Locker> for Error {
 	fn from(value: Locker) -> Self {
@@ -128,12 +145,6 @@ impl From<auth::Pam> for Error {
 	}
 }
 
-impl From<dbus::Error> for Error {
-	fn from(value: dbus::Error) -> Self {
-		Error::DBus(value)
-	}
-}
-
 impl fmt::Display for Error {
 	fn fmt(&self, f: &mut fmt::Formatter) -> ::std::result::Result<(), fmt::Error> {
 		f.write_str(error::Error::description(self))
@@ -155,8 +166,13 @@ impl error::Error for Error {
 			Error::Parse =>
 				"Parse error.",
 
-			Error::DBus(ref err) =>
-				err.description(),
+			Error::DBus(ref err) => match *err {
+				DBus::AlreadyRegistered =>
+					"The name has already been registered.",
+
+				DBus::Internal(ref err) =>
+					err.description(),
+			},
 
 			Error::Locker(ref err) => match *err {
 				Locker::Display =>

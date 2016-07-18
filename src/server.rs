@@ -128,14 +128,61 @@ impl Server {
 
 		// DBus interface.
 		{
-			let sender = sender.clone();
+			let sender                 = sender.clone();
+			let (g_sender, g_receiver) = channel::<error::Result<()>>();
+
+			macro_rules! ok {
+				() => (
+					g_sender.send(Ok(())).unwrap();
+				);
+			}
+
+			macro_rules! try {
+				($body:expr) => (
+					match $body {
+						Ok(value) => {
+							value
+						}
+
+						Err(error) => {
+							g_sender.send(Err(error.into())).unwrap();
+							return;
+						}
+					}
+				);
+
+				(register $conn:expr, $name:expr) => (
+					match $conn.register_name($name, dbus::NameFlag::DoNotQueue as u32) {
+						Ok(dbus::RequestNameReply::Exists) => {
+							g_sender.send(Err(error::DBus::AlreadyRegistered.into())).unwrap();
+							return;
+						}
+
+						Err(error) => {
+							g_sender.send(Err(error.into())).unwrap();
+							return;
+						}
+
+						Ok(value) => {
+							value
+						}
+					}
+				);
+			}
+
+			macro_rules! catch {
+				() => (
+					g_receiver.recv().unwrap()
+				)
+			}
 
 			thread::spawn(move || {
-				let c = dbus::Connection::get_private(dbus::BusType::Session).unwrap();
+				let c = try!(dbus::Connection::get_private(dbus::BusType::Session));
 				let f = dbus::tree::Factory::new_fn();
 
-				c.register_name("org.gnome.ScreenSaver", 0).unwrap();
-				c.register_name("meh.rust.ScreenSaver", 0).unwrap();
+				try!(register c, "org.gnome.ScreenSaver");
+				try!(register c, "meh.rust.ScreenSaver");
+				ok!();
 
 				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
 				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
@@ -365,6 +412,8 @@ impl Server {
 					}
 				}
 			});
+
+			catch!()?;
 		}
 
 		Ok(Server {
