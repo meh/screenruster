@@ -105,38 +105,70 @@ fn main() {
 				.help("The previously returned cookie.")))
 		.get_matches();
 
-	let config = Config::load(&matches).unwrap();
+	let config = exit(Config::load(&matches));
 
-	if let Some(submatches) = matches.subcommand_matches("lock") {
-		lock(submatches.clone(), config).unwrap();
+	exit(if let Some(submatches) = matches.subcommand_matches("lock") {
+		lock(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("activate") {
-		activate(submatches.clone(), config).unwrap();
+		activate(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("deactivate") {
-		deactivate(submatches.clone(), config).unwrap();
+		deactivate(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("inhibit") {
-		inhibit(submatches.clone(), config).unwrap();
+		inhibit(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("uninhibit") {
-		uninhibit(submatches.clone(), config).unwrap();
+		uninhibit(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("throttle") {
-		throttle(submatches.clone(), config).unwrap();
+		throttle(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("unthrottle") {
-		unthrottle(submatches.clone(), config).unwrap();
+		unthrottle(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("suspend") {
-		suspend(submatches.clone(), config).unwrap();
+		suspend(submatches.clone(), config)
 	}
 	else if let Some(submatches) = matches.subcommand_matches("resume") {
-		resume(submatches.clone(), config).unwrap();
+		resume(submatches.clone(), config)
+	}
+	else {
+		daemon(matches.clone(), config)
+	})
+}
+
+fn exit<T>(value: error::Result<T>) -> T {
+	use std::io::Write;
+	use error::Error;
+
+	macro_rules! error {
+		($code:expr, $message:expr) => (
+			error!($code, "{}", $message);
+		);
+
+		($code:expr, $message:expr, $($rest:tt)*) => ({
+			write!(&mut ::std::io::stderr(), "ERROR: ").unwrap();
+			writeln!(&mut ::std::io::stderr(), $message, $($rest)*).unwrap();
+			std::process::exit($code);
+		});
 	}
 
-	else {
-		daemon(matches.clone(), config).unwrap();
+	match value {
+		Ok(value) =>
+			value,
+
+		Err(error) => match error {
+			Error::Parse =>
+				error!(1, "The configuration file has a syntax error."),
+
+			Error::DBus(error::DBus::AlreadyRegistered) =>
+				error!(10, "Another screen saver is currently running."),
+
+			_ =>
+				error!(255, "Something happened :(")
+		}
 	}
 }
 
