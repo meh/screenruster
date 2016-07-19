@@ -72,18 +72,12 @@ pub struct Locker {
 	pub dpms:    bool,
 
 	pub on_suspend: OnSuspend,
-	pub on_resume:  OnResume,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum OnSuspend {
 	Ignore,
 	UseSystemTime,
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum OnResume {
-	Ignore,
 	Activate,
 	Lock,
 }
@@ -94,12 +88,6 @@ impl Default for OnSuspend {
 	}
 }
 
-impl Default for OnResume {
-	fn default() -> OnResume {
-		OnResume::Ignore
-	}
-}
-
 impl Default for Locker {
 	fn default() -> Locker {
 		Locker {
@@ -107,7 +95,6 @@ impl Default for Locker {
 			dpms:    true,
 
 			on_suspend: Default::default(),
-			on_resume:  Default::default(),
 		}
 	}
 }
@@ -156,18 +143,11 @@ impl Config {
 							"use-system-time" =>
 								OnSuspend::UseSystemTime,
 
-							_ =>
-								Default::default()
-						}
-					}
-
-					if let Some(value) = table.get("on-resume").and_then(|v| v.as_str()) {
-						config.on_resume = match value {
 							"lock" =>
-								OnResume::Lock,
+								OnSuspend::Lock,
 
 							"activate" =>
-								OnResume::Activate,
+								OnSuspend::Activate,
 
 							_ =>
 								Default::default()

@@ -554,7 +554,9 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 					server::Request::PrepareForSleep(time) => {
 						if let Some(time) = time {
 							match config.locker().on_suspend {
-								config::OnSuspend::Ignore => (),
+								config::OnSuspend::Ignore |
+								config::OnSuspend::Activate |
+								config::OnSuspend::Lock => (),
 
 								config::OnSuspend::UseSystemTime => {
 									act!(suspend time);
@@ -568,16 +570,12 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 								config::OnSuspend::UseSystemTime => {
 									act!(resume);
 								}
-							}
 
-							match config.locker().on_resume {
-								config::OnResume::Ignore => (),
-
-								config::OnResume::Activate => {
+								config::OnSuspend::Activate => {
 									act!(start);
 								}
 
-								config::OnResume::Lock => {
+								config::OnSuspend::Lock => {
 									act!(start);
 									act!(lock);
 								}
