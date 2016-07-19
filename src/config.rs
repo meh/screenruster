@@ -174,20 +174,20 @@ impl Config {
 				let mut config = Timer::default();
 
 				if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
-					if let Some(value) = table.get("beat").and_then(|v| v.as_integer()) {
-						config.beat = value as u32;
+					if let Some(value) = seconds(table.get("beat")) {
+						config.beat = value;
 					}
 
-					if let Some(value) = table.get("timeout").and_then(|v| v.as_integer()) {
-						config.timeout = value as u32;
+					if let Some(value) = seconds(table.get("timeout")) {
+						config.timeout = value;
 					}
 
-					if let Some(value) = table.get("lock").and_then(|v| v.as_integer()) {
-						config.lock = Some(value as u32);
+					if let Some(value) = seconds(table.get("lock")) {
+						config.lock = Some(value);
 					}
 
-					if let Some(value) = table.get("blank").and_then(|v| v.as_integer()) {
-						config.blank = Some(value as u32);
+					if let Some(value) = seconds(table.get("blank")) {
+						config.blank = Some(value);
 					}
 				}
 
@@ -261,5 +261,51 @@ impl Saver {
 	/// Get the configuration for a specific saver.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		self.0.get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
+	}
+}
+
+fn seconds(value: Option<&toml::Value>) -> Option<u32> {
+	macro_rules! try {
+		($body:expr) => (
+			if let Ok(value) = $body {
+				value: u32
+			}
+			else {
+				return None;
+			}
+		);
+	}
+
+	if value.is_none() {
+		return None;
+	}
+
+	match value.unwrap() {
+		&toml::Value::Integer(value) => {
+			Some(value as u32)
+		}
+
+		&toml::Value::Float(value) => {
+			Some(value.round() as u32)
+		}
+
+		&toml::Value::String(ref value) => {
+			match value.split(':').collect::<Vec<&str>>()[..] {
+				[hours, minutes, seconds] =>
+					Some(try!(hours.parse()) * 60 * 60 + try!(minutes.parse()) * 60 + try!(seconds.parse())),
+
+				[minutes, seconds] =>
+					Some(try!(minutes.parse()) * 60 + try!(seconds.parse())),
+
+				[seconds] =>
+					Some(try!(seconds.parse())),
+
+				_ =>
+					None
+			}
+		}
+
+		_ =>
+			None
 	}
 }

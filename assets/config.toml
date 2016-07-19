@@ -32,11 +32,11 @@ on-suspend = "use-system-time"
 beat = 10
 
 # How many seconds to wait before starting the screen saver.
-timeout = 360
+timeout = "5:00"
 
 # How many seconds to wait before locking the screen after the screen saver has
 # been started.
-lock = 0
+lock = false
 
 # How many seconds to wait before blanking the screen.
 #

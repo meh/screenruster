@@ -16,7 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 #![feature(type_ascription, question_mark, associated_type_defaults)]
-#![feature(mpsc_select, stmt_expr_attributes, box_syntax)]
+#![feature(mpsc_select, stmt_expr_attributes, box_syntax, slice_patterns)]
 
 #[macro_use]
 extern crate log;
