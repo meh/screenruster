@@ -66,8 +66,6 @@ impl Config {
 				.place_config_file("config.toml").unwrap()
 		};
 
-		info!("{:?}", path);
-
 		let table = if let Ok(mut file) = File::open(path) {
 			let mut content = String::new();
 			file.read_to_string(&mut content).unwrap();
@@ -122,7 +120,6 @@ impl Config {
 			}
 
 			if let Some(value) = seconds(table.get("timeout")) {
-				info!("timeout: {}", value);
 				self.timer.0.write().unwrap().timeout = value;
 			}
 
