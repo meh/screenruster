@@ -135,10 +135,10 @@ impl Locker {
 								Request::Start => {
 									for window in windows.values_mut() {
 										if !config.saver().using().is_empty() {
-											let name = config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
+											let name = &config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
-											if let Ok(mut saver) = Saver::spawn(name) {
-												saver.config(config.saver().get(name)).unwrap();
+											if let Ok(mut saver) = Saver::spawn(&name) {
+												saver.config(config.saver().get(&name)).unwrap();
 												saver.target(display.name(), window.screen, window.id).unwrap();
 
 												if config.saver().throttle() {
@@ -160,7 +160,7 @@ impl Locker {
 									password = String::new();
 
 									for saver in savers.values_mut() {
-										saver.lock();
+										saver.lock().unwrap();
 									}
 								}
 

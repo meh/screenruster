@@ -34,6 +34,9 @@ pub struct Server {
 
 #[derive(Debug)]
 pub enum Request {
+	/// Reload the configuration file.
+	Reload(Option<String>),
+
 	/// Lock the screen.
 	Lock,
 
@@ -91,6 +94,8 @@ pub enum Request {
 
 #[derive(Debug)]
 pub enum Response {
+	Reload(bool),
+
 	Inhibit(u32),
 	Throttle(u32),
 	Suspend(u32),
@@ -208,8 +213,23 @@ impl Server {
 				let tree = f.tree()
 					// ScreenRuster interface.
 					.add(f.object_path("/meh/rust/ScreenSaver").introspectable().add(f.interface("meh.rust.ScreenSaver")
+						.add_m(f.method("Reload", |m, _, _| {
+							if config.ignores("reload") {
+								return Err(dbus::tree::MethodErr::failed(&"Reload is ignored"));
+							}
+
+							sender.send(Request::Reload(m.get1())).unwrap();
+
+							if let Response::Reload(value) = receiver.recv().unwrap() {
+								Ok(vec![m.method_return().append1(value)])
+							}
+							else {
+								unreachable!();
+							}
+						}).inarg::<String, _>("path").outarg::<bool, _>("success"))
+
 						.add_m(f.method("Suspend", |m, _, _| {
-							if config.ignore.contains("suspend") {
+							if config.ignores("suspend") {
 								return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
 							}
 
@@ -232,7 +252,7 @@ impl Server {
 						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
 						.add_m(f.method("Resume", |m, _, _| {
-							if config.ignore.contains("suspend") {
+							if config.ignores("suspend") {
 								return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
 							}
 
@@ -267,7 +287,7 @@ impl Server {
 						}))
 
 						.add_m(f.method("Inhibit", |m, _, _| {
-							if config.ignore.contains("inhibit") {
+							if config.ignores("inhibit") {
 								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
 							}
 
@@ -290,7 +310,7 @@ impl Server {
 						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
 						.add_m(f.method("UnInhibit", |m, _, _| {
-							if config.ignore.contains("inhibit") {
+							if config.ignores("inhibit") {
 								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
 							}
 
@@ -305,7 +325,7 @@ impl Server {
 						}).inarg::<u32, _>("cookie"))
 
 						.add_m(f.method("Throttle", |m, _, _| {
-							if config.ignore.contains("throttle") {
+							if config.ignores("throttle") {
 								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
 							}
 
@@ -328,7 +348,7 @@ impl Server {
 						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
 						.add_m(f.method("UnThrottle", |m, _, _| {
-							if config.ignore.contains("throttle") {
+							if config.ignores("throttle") {
 								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
 							}
 

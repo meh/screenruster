@@ -181,7 +181,7 @@ impl Timer {
 				}
 
 				// If it's time to send a heart beat, send one and reset.
-				if beat.elapsed().as_secs() >= config.beat as u64 {
+				if beat.elapsed().as_secs() >= config.beat() as u64 {
 					beat = Instant::now();
 					sender.send(Response::Heartbeat).unwrap();
 				}
@@ -192,7 +192,7 @@ impl Timer {
 				}
 
 				// If blanking is enabled and the screen is not already blanked.
-				if let (Some(after), false) = (config.blank, blanked.is_some()) {
+				if let (Some(after), false) = (config.blank(), blanked.is_some()) {
 					if unblanked.unwrap_or(idle).elapsed().as_secs() >= after as u64 {
 						sender.send(Response::Blank).unwrap();
 						blanked = Some(Instant::now());
@@ -200,13 +200,13 @@ impl Timer {
 				}
 
 				// If the system has been idle long enough send the message.
-				if started.is_none() && idle.elapsed().as_secs() + correction >= config.timeout as u64 {
+				if started.is_none() && idle.elapsed().as_secs() + correction >= config.timeout() as u64 {
 					sender.send(Response::Start).unwrap();
 					started = Some(Instant::now());
 				}
 
 				// If the screen saver has been started, the screen is not locked and locking is enabled.
-				if let (Some(start), Some(after), false) = (started, config.lock, locked.is_some()) {
+				if let (Some(start), Some(after), false) = (started, config.lock(), locked.is_some()) {
 					if start.elapsed().as_secs() + correction >= after as u64 {
 						sender.send(Response::Lock).unwrap();
 						locked = Some(Instant::now());

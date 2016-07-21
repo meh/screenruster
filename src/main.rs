@@ -17,6 +17,7 @@
 
 #![feature(type_ascription, question_mark, associated_type_defaults)]
 #![feature(mpsc_select, stmt_expr_attributes, box_syntax, slice_patterns)]
+#![feature(pub_restricted)]
 
 #[macro_use]
 extern crate log;
@@ -71,11 +72,13 @@ fn main() {
 	let mut app = App::new("screenruster")
 		.version(env!("CARGO_PKG_VERSION"))
 		.author("meh. <meh@schizofreni.co>")
-		.arg(Arg::with_name("config")
-			.short("c")
-			.long("config")
-			.help("Sets a custom configuration file.")
-			.takes_value(true))
+		.subcommand(SubCommand::with_name("reload")
+			.about("Reload the configuration file.")
+			.arg(Arg::with_name("config")
+				.short("c")
+				.long("config")
+				.help("The path to the configuration file.")
+				.takes_value(true)))
 		.subcommand(SubCommand::with_name("lock")
 			.about("Lock the screen."))
 		.subcommand(SubCommand::with_name("activate")
@@ -113,44 +116,51 @@ fn main() {
 				.index(1)
 				.help("The saver name.")))
 		.subcommand(SubCommand::with_name("daemon")
-			.about("Start the daemon."));
+			.about("Start the daemon.")
+			.arg(Arg::with_name("config")
+				.short("c")
+				.long("config")
+				.help("The path to the configuration file.")
+				.takes_value(true)));
 
 	let matches = app.clone().get_matches();
-	let config  = exit(Config::load(&matches));
 
 	exit(match matches.subcommand() {
+		("reload", Some(submatches)) =>
+			reload(submatches),
+
 		("lock", Some(submatches)) =>
-			lock(submatches.clone(), config),
+			lock(submatches),
 
 		("activate", Some(submatches)) =>
-			activate(submatches.clone(), config),
+			activate(submatches),
 
 		("deactivate", Some(submatches)) =>
-			deactivate(submatches.clone(), config),
+			deactivate(submatches),
 
 		("inhibit", Some(submatches)) =>
-			inhibit(submatches.clone(), config),
+			inhibit(submatches),
 
 		("uninhibit", Some(submatches)) =>
-			uninhibit(submatches.clone(), config),
+			uninhibit(submatches),
 
 		("throttle", Some(submatches)) =>
-			throttle(submatches.clone(), config),
+			throttle(submatches),
 
 		("unthrottle", Some(submatches)) =>
-			unthrottle(submatches.clone(), config),
+			unthrottle(submatches),
 
 		("suspend", Some(submatches)) =>
-			suspend(submatches.clone(), config),
+			suspend(submatches),
 
 		("resume", Some(submatches)) =>
-			resume(submatches.clone(), config),
+			resume(submatches),
 
 		("preview", Some(submatches)) =>
-			preview(submatches.clone(), config),
+			preview(submatches),
 
 		("daemon", Some(submatches)) =>
-			daemon(submatches.clone(), config),
+			daemon(submatches),
 
 		_ =>
 			app.print_help().map_err(|e| e.into())
@@ -190,7 +200,24 @@ fn exit<T>(value: error::Result<T>) -> T {
 	}
 }
 
-fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn reload(matches: &ArgMatches) -> error::Result<()> {
+	let mut message = dbus::Message::new_method_call(
+			"meh.rust.ScreenSaver",
+			"/meh/rust/ScreenSaver",
+			"meh.rust.ScreenSaver",
+			"Reload")?;
+
+	if let Some(value) = matches.value_of("config") {
+		message = message.append1(value);
+	}
+
+	dbus::Connection::get_private(dbus::BusType::Session)?
+		.send(message)?;
+
+	Ok(())
+}
+
+fn lock(_matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -201,7 +228,7 @@ fn lock(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn activate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn activate(_matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -213,7 +240,7 @@ fn activate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn deactivate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn deactivate(_matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -224,7 +251,7 @@ fn deactivate(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn inhibit(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn inhibit(_matches: &ArgMatches) -> error::Result<()> {
 	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
 		.send_with_reply_and_block(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -239,7 +266,7 @@ fn inhibit(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn uninhibit(matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn uninhibit(matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -251,7 +278,7 @@ fn uninhibit(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn throttle(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn throttle(_matches: &ArgMatches) -> error::Result<()> {
 	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
 		.send_with_reply_and_block(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -266,7 +293,7 @@ fn throttle(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn unthrottle(matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"org.gnome.ScreenSaver",
@@ -278,7 +305,7 @@ fn unthrottle(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn suspend(_matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn suspend(_matches: &ArgMatches) -> error::Result<()> {
 	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
 		.send_with_reply_and_block(dbus::Message::new_method_call(
 			"meh.rust.ScreenSaver",
@@ -293,7 +320,7 @@ fn suspend(_matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn resume(matches: ArgMatches, _config: Config) -> error::Result<()> {
+fn resume(matches: &ArgMatches) -> error::Result<()> {
 	dbus::Connection::get_private(dbus::BusType::Session)?
 		.send(dbus::Message::new_method_call(
 			"meh.rust.ScreenSaver",
@@ -305,7 +332,8 @@ fn resume(matches: ArgMatches, _config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn preview(matches: ArgMatches, config: Config) -> error::Result<()> {
+fn preview(matches: &ArgMatches) -> error::Result<()> {
+	let config  = Config::load(matches.value_of("config"))?;
 	let preview = Preview::spawn(matches.value_of("SAVER").unwrap(), config)?;
 
 	loop {
@@ -319,7 +347,7 @@ fn preview(matches: ArgMatches, config: Config) -> error::Result<()> {
 	Ok(())
 }
 
-fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
+fn daemon(matches: &ArgMatches) -> error::Result<()> {
 	use std::time::{Instant, SystemTime};
 	use std::collections::HashSet;
 	use rand::{self, Rng};
@@ -347,9 +375,10 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 		}
 	}
 
-	let timer  = Timer::spawn(config.timer().clone())?;
-	let auth   = Auth::spawn(config.auth().clone())?;
-	let server = Server::spawn(config.server().clone())?;
+	let config = Config::load(matches.value_of("config"))?;
+	let timer  = Timer::spawn(config.timer())?;
+	let auth   = Auth::spawn(config.auth())?;
+	let server = Server::spawn(config.server())?;
 	let locker = Locker::spawn(config.clone())?;
 
 	let mut locked    = None: Option<Instant>;
@@ -495,6 +524,12 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 			// DBus events.
 			event = s.recv() => {
 				match event.unwrap() {
+					server::Request::Reload(source) => {
+						config.reset();
+						server.response(server::Response::Reload(
+							config.reload(source).is_ok())).unwrap();
+					}
+
 					server::Request::Lock => {
 						if started.is_none() {
 							act!(start);
@@ -585,7 +620,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 
 					server::Request::PrepareForSleep(time) => {
 						if let Some(time) = time {
-							match config.locker().on_suspend {
+							match config.locker().on_suspend() {
 								config::OnSuspend::Ignore |
 								config::OnSuspend::Activate |
 								config::OnSuspend::Lock => (),
@@ -596,7 +631,7 @@ fn daemon(_matches: ArgMatches, config: Config) -> error::Result<()> {
 							}
 						}
 						else {
-							match config.locker().on_suspend {
+							match config.locker().on_suspend() {
 								config::OnSuspend::Ignore => (),
 
 								config::OnSuspend::UseSystemTime => {
