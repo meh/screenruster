@@ -48,6 +48,9 @@ mod error;
 mod config;
 use config::Config;
 
+mod preview;
+use preview::Preview;
+
 mod locker;
 use locker::Locker;
 
@@ -142,6 +145,9 @@ fn main() {
 
 		("resume", Some(submatches)) =>
 			resume(submatches.clone(), config),
+
+		("preview", Some(submatches)) =>
+			preview(submatches.clone(), config),
 
 		("daemon", Some(submatches)) =>
 			daemon(submatches.clone(), config),
@@ -295,6 +301,20 @@ fn resume(matches: ArgMatches, _config: Config) -> error::Result<()> {
 			"meh.rust.ScreenSaver",
 			"Resume")?
 				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
+
+	Ok(())
+}
+
+fn preview(matches: ArgMatches, config: Config) -> error::Result<()> {
+	let preview = Preview::spawn(matches.value_of("SAVER").unwrap(), config)?;
+
+	loop {
+		match preview.recv().unwrap() {
+			preview::Response::Done(..) => {
+				break;
+			}
+		}
+	}
 
 	Ok(())
 }
