@@ -158,6 +158,10 @@ impl Locker {
 
 								Request::Lock => {
 									password = String::new();
+
+									for saver in savers.values_mut() {
+										saver.lock();
+									}
 								}
 
 								Request::Auth(state) => {

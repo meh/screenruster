@@ -183,6 +183,13 @@ include a fade in or other fancy graphics.
 
 - `type` = `"start"`
 
+### Lock
+
+The lock request is sent when the screen has been locked, this is useful to
+render a notification that the screen is currently locked.
+
+- `type` = `"lock"`
+
 ### Stop
 
 The stop request is sent when the saver should stop its rendering, this may

@@ -198,6 +198,10 @@ impl Saver {
 									"type" => "start"
 								},
 
+								api::Request::Lock => object!{
+									"type" => "lock"
+								},
+
 								api::Request::Stop => object!{
 									"type" => "stop"
 								},
@@ -341,6 +345,11 @@ impl Saver {
 	pub fn start(&mut self) -> Result<(), SendError<Request>> {
 		self.started = true;
 		self.send(api::Request::Start)
+	}
+
+	/// Start the saver.
+	pub fn lock(&mut self) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Lock)
 	}
 
 	/// Stop the saver.
