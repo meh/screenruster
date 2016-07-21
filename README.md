@@ -32,7 +32,7 @@ Usage
 First, start the daemon.
 
 ```
-screenruster &
+screenruster daemon &
 ```
 
 Then if you want to activate the screen saver manually:
