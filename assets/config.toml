@@ -53,5 +53,5 @@ throttle = false
 
 # Settings for a specific screen saver.
 [saver.laughing_man]
-blur = { max  = 1.2, step = 0.00001, count = 4 }
-man  = { rotate = 0.000005, scale  = 400.0 }
+blur = { max  = 1.2, step = 0.01, count = 4 }
+man  = { rotate = 0.005, scale  = 400.0 }
