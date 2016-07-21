@@ -72,14 +72,10 @@ pub enum Response {
 impl Locker {
 	pub fn spawn(config: Config) -> error::Result<Locker> {
 		unsafe {
-			let mut windows  = HashMap::new(): HashMap<xlib::Window, Window>;
-			let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
-			let mut checking = false;
-			let mut password = String::new();
-			let mut event    = mem::zeroed(): xlib::XEvent;
-
 			let display = Display::open(config.locker())?;
 			display.sanitize();
+
+			let mut windows = HashMap::new(): HashMap<xlib::Window, Window>;
 
 			for screen in 0 .. xlib::XScreenCount(display.id) {
 				let window = Window::create(display.clone(), screen)?;
@@ -101,9 +97,14 @@ impl Locker {
 				let display = display.clone();
 
 				thread::spawn(move || {
+					let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
+					let mut checking = false;
+					let mut password = String::new();
+					let mut event    = mem::zeroed(): xlib::XEvent;
+
 					loop {
 						// Check if there are any control messages.
-						if let Ok(message) = receiver.try_recv() {
+						while let Ok(message) = receiver.try_recv() {
 							match message {
 								Request::Sanitize => {
 									display.sanitize();

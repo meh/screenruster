@@ -59,8 +59,8 @@ impl Window {
 	pub fn create(display: Arc<Display>, screen: c_int) -> error::Result<Window> {
 		unsafe {
 			let root   = xlib::XRootWindow(display.id, screen);
-			let width  = xlib::XDisplayWidth(display.id, screen) as c_uint;
-			let height = xlib::XDisplayHeight(display.id, screen) as c_uint;
+			let width  = xlib::XDisplayWidth(display.id, screen) as u32;
+			let height = xlib::XDisplayHeight(display.id, screen) as u32;
 			let black  = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(display.id, screen));
 
 			// We need to pick the visual even if the context isn't actually created

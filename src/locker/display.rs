@@ -36,6 +36,9 @@ pub struct Display {
 	pub atoms: Atoms,
 }
 
+unsafe impl Send for Display { }
+unsafe impl Sync for Display { }
+
 #[derive(Debug)]
 pub struct Atoms {
 	pub saver: xlib::Atom,
@@ -249,9 +252,6 @@ impl Display {
 		}
 	}
 }
-
-unsafe impl Send for Display { }
-unsafe impl Sync for Display { }
 
 impl Drop for Display {
 	fn drop(&mut self) {
