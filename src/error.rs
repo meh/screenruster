@@ -20,6 +20,7 @@ use std::error;
 use std::io;
 
 use dbus;
+use clap;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -31,6 +32,7 @@ pub enum Error {
 	Parse,
 
 	DBus(DBus),
+	Cli(clap::Error),
 	Locker(Locker),
 	Grab(Grab),
 	Auth(Auth),
@@ -107,6 +109,12 @@ impl From<dbus::Error> for Error {
 	}
 }
 
+impl From<clap::Error> for Error {
+	fn from(value: clap::Error) -> Self {
+		Error::Cli(value)
+	}
+}
+
 impl From<DBus> for Error {
 	fn from(value: DBus) -> Self {
 		Error::DBus(value)
@@ -173,6 +181,9 @@ impl error::Error for Error {
 				DBus::Internal(ref err) =>
 					err.description(),
 			},
+
+			Error::Cli(ref err) =>
+				err.description(),
 
 			Error::Locker(ref err) => match *err {
 				Locker::Display =>

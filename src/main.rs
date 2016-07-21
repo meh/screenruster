@@ -65,7 +65,7 @@ mod saver;
 fn main() {
 	env_logger::init().unwrap();
 
-	let matches = App::new("screenruster")
+	let mut app = App::new("screenruster")
 		.version(env!("CARGO_PKG_VERSION"))
 		.author("meh. <meh@schizofreni.co>")
 		.arg(Arg::with_name("config")
@@ -103,40 +103,52 @@ fn main() {
 				.required(true)
 				.index(1)
 				.help("The previously returned cookie.")))
-		.get_matches();
+		.subcommand(SubCommand::with_name("preview")
+			.about("Preview a saver.")
+			.arg(Arg::with_name("SAVER")
+				.required(true)
+				.index(1)
+				.help("The saver name.")))
+		.subcommand(SubCommand::with_name("daemon")
+			.about("Start the daemon."));
 
-	let config = exit(Config::load(&matches));
+	let matches = app.clone().get_matches();
+	let config  = exit(Config::load(&matches));
 
-	exit(if let Some(submatches) = matches.subcommand_matches("lock") {
-		lock(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("activate") {
-		activate(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("deactivate") {
-		deactivate(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("inhibit") {
-		inhibit(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("uninhibit") {
-		uninhibit(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("throttle") {
-		throttle(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("unthrottle") {
-		unthrottle(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("suspend") {
-		suspend(submatches.clone(), config)
-	}
-	else if let Some(submatches) = matches.subcommand_matches("resume") {
-		resume(submatches.clone(), config)
-	}
-	else {
-		daemon(matches.clone(), config)
-	})
+	exit(match matches.subcommand() {
+		("lock", Some(submatches)) =>
+			lock(submatches.clone(), config),
+
+		("activate", Some(submatches)) =>
+			activate(submatches.clone(), config),
+
+		("deactivate", Some(submatches)) =>
+			deactivate(submatches.clone(), config),
+
+		("inhibit", Some(submatches)) =>
+			inhibit(submatches.clone(), config),
+
+		("uninhibit", Some(submatches)) =>
+			uninhibit(submatches.clone(), config),
+
+		("throttle", Some(submatches)) =>
+			throttle(submatches.clone(), config),
+
+		("unthrottle", Some(submatches)) =>
+			unthrottle(submatches.clone(), config),
+
+		("suspend", Some(submatches)) =>
+			suspend(submatches.clone(), config),
+
+		("resume", Some(submatches)) =>
+			resume(submatches.clone(), config),
+
+		("daemon", Some(submatches)) =>
+			daemon(submatches.clone(), config),
+
+		_ =>
+			app.print_help().map_err(|e| e.into())
+	});
 }
 
 fn exit<T>(value: error::Result<T>) -> T {
