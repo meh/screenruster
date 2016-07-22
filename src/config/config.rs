@@ -182,16 +182,16 @@ fn seconds(value: Option<&toml::Value>) -> Option<u32> {
 		return None;
 	}
 
-	match value.unwrap() {
-		&toml::Value::Integer(value) => {
+	match *value.unwrap() {
+		toml::Value::Integer(value) => {
 			Some(value as u32)
 		}
 
-		&toml::Value::Float(value) => {
+		toml::Value::Float(value) => {
 			Some(value.round() as u32)
 		}
 
-		&toml::Value::String(ref value) => {
+		toml::Value::String(ref value) => {
 			match value.split(':').collect::<Vec<&str>>()[..] {
 				[hours, minutes, seconds] =>
 					Some(try!(hours.parse()) * 60 * 60 + try!(minutes.parse()) * 60 + try!(seconds.parse())),
