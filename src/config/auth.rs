@@ -19,11 +19,25 @@ use std::sync::{Arc, RwLock};
 use toml;
 
 #[derive(Clone, Default, Debug)]
-pub struct Auth(pub(super) Arc<RwLock<toml::Table>>);
+pub struct Auth(pub(super) Arc<RwLock<Data>>);
+
+#[derive(Debug)]
+pub(super) struct Data {
+	pub table: toml::Table,
+}
+
+impl Default for Data {
+	fn default() -> Data {
+		Data {
+			table: Default::default(),
+		}
+	}
+}
 
 impl Auth {
 	/// Get the configuration for a specific authorization module.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
-		self.0.read().unwrap().get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
+		self.0.read().unwrap().table.get(name.as_ref())
+			.and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}
 }

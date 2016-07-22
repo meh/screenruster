@@ -134,12 +134,27 @@ impl Config {
 
 		// Load `Auth`.
 		if let Some(table) = table.get("auth").and_then(|v| v.as_table()) {
-			*self.auth.0.write().unwrap() = table.clone();
+			self.auth.0.write().unwrap().table = table.clone();
 		}
 
 		// Load `Saver`.
 		if let Some(table) = table.get("saver").and_then(|v| v.as_table()) {
-			*self.saver.0.write().unwrap() = table.clone();
+			if let Some(value) = seconds(table.get("timeout")) {
+				self.saver.0.write().unwrap().timeout = value;
+			}
+
+			if let Some(value) = table.get("throttle").and_then(|v| v.as_bool()) {
+				self.saver.0.write().unwrap().throttle = value;
+			}
+
+			if let Some(value) = table.get("use").and_then(|v| v.as_slice()) {
+				self.saver.0.write().unwrap().using = value.iter()
+					.filter(|v| v.as_str().is_some())
+					.map(|v| v.as_str().unwrap().into())
+					.collect();
+			}
+
+			self.saver.0.write().unwrap().table = table.clone();
 		}
 
 		Ok(())

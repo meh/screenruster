@@ -19,26 +19,48 @@ use std::sync::{Arc, RwLock};
 use toml;
 
 #[derive(Clone, Default, Debug)]
-pub struct Saver(pub(super) Arc<RwLock<toml::Table>>);
+pub struct Saver(pub(super) Arc<RwLock<Data>>);
+
+#[derive(Debug)]
+pub(super) struct Data {
+	pub timeout:  u32,
+	pub throttle: bool,
+
+	pub using: Vec<String>,
+	pub table: toml::Table,
+}
+
+impl Default for Data {
+	fn default() -> Data {
+		Data {
+			timeout:  5,
+			throttle: false,
+
+			using: Default::default(),
+			table: Default::default(),
+		}
+	}
+}
 
 impl Saver {
-	/// List of savers being used.
-	pub fn using(&self) -> Vec<String> {
-		self.0.read().unwrap().get("use").and_then(|v| v.as_slice())
-			.unwrap_or(&[])
-			.iter()
-			.filter(|v| v.as_str().is_some())
-			.map(|v| v.as_str().unwrap().into())
-			.collect()
+	/// The timeout for saver requests.
+	pub fn timeout(&self) -> u32 {
+		self.0.read().unwrap().timeout
 	}
 
 	/// Whether throttling is enabled by default.
 	pub fn throttle(&self) -> bool {
-		self.0.read().unwrap().get("throttle").and_then(|v| v.as_bool()).unwrap_or(false)
+		self.0.read().unwrap().throttle
+	}
+
+	/// List of savers being used.
+	pub fn using(&self) -> Vec<String> {
+		self.0.read().unwrap().using.clone()
 	}
 
 	/// Get the configuration for a specific saver.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
-		self.0.read().unwrap().get(name.as_ref()).and_then(|v| v.as_table()).cloned().unwrap_or_default()
+		self.0.read().unwrap().table.get(name.as_ref())
+			.and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}
 }
