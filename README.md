@@ -82,6 +82,36 @@ This is a list of available screen savers that will be updated over time, if
 you made a saver and want it added here just open a pull request.
 
 - [Laughing Man](https://github.com/meh/screenruster-saver-laughing_man) from Ghost in the Shell: Stand Alone Complex
+- [XScreensaer & XLock](https://github.com/meh/screenruster-saver-hacks) support
+
+Why?
+====
+Because I wanted to make a fancy screen saver and `xscreensaver` would have been
+a bigger pain to work with than to make this from scratch.
+
+Why should I use this instead of `xscreensaver`?
+------------------------------------------------
+If you feel adventurous and want to use a screen locker that hasn't been tested
+as thorougly as `xscreensaver`.
+
+Or if you like any of the screen savers made for `ScreenRuster`. 
+
+Theoretically `ScreenRuster` should be safer than `xscreensaver` because it's
+written in Rust and the architecture is slightly different from the one from
+`xscreensaver` further reducing the attack surface.
+
+Practically `ScreenRuster` is still young and there's a lot of unsafe code
+around the usage of `Xlib` and `PAM` which makes it not that much safer than
+`xscreensaver` from that point of view.
+
+Why should I use this instead of `gnome-screensaver`?
+-----------------------------------------------------
+Because `ScreenRuster` is still safer than `gnome-screensaver` and it
+implements the same DBus interface, so it should work even with the rest of the
+GNOME environment.
+
+But really, just use `xscreensaver` for now, anything is better than
+`gnome-screensaver`.
 
 Architecture
 ============
