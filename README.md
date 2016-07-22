@@ -129,8 +129,8 @@ coming from `stderr` to allow for debugging or logging.
 
 The job of the saver is merely to do the rendering, this includes any fade
 in/out or dialog boxes, this further reduces the attack surface of the locker.
-__Note that the saver does not actually get the input, it just gets `Insert` or `Delete` events, so
-it can fill its dialog box.__
+_Note that the saver does not actually get the input, it just gets `Insert` or `Delete` events, so
+it can fill its dialog box._
 
 Protocol
 ========
