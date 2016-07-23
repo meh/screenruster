@@ -15,222 +15,67 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ptr;
-use std::mem;
-use std::time::Duration;
-use std::thread;
 use std::sync::Arc;
+use std::ops::Deref;
 
-use libc::{c_int, c_uint};
-use x11::{xlib, glx, xrandr};
+use xcb;
 
 use error;
-use util;
 use super::Display;
+use platform::{self, Grab};
 
-#[derive(Debug)]
 pub struct Window {
-	pub id:     xlib::Window,
-	pub width:  u32,
-	pub height: u32,
+	display: Arc<Display>,
+	window:  platform::Window,
+	gc:      u32,
 
-	pub display: Arc<Display>,
-	pub screen:  c_int,
-	pub root:    xlib::Window,
-	pub cursor:  xlib::Cursor,
-	pub im:      xlib::XIM,
-	pub ic:      xlib::XIC,
-
-	pub locked:   bool,
-	pub keyboard: bool,
-	pub pointer:  bool,
-}
-
-unsafe impl Send for Window { }
-unsafe impl Sync for Window { }
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Grab {
-	Keyboard,
-	Pointer,
+	locked:   bool,
+	keyboard: bool,
+	pointer:  bool,
 }
 
 impl Window {
-	pub fn create(display: Arc<Display>, screen: c_int) -> error::Result<Window> {
-		unsafe {
-			let root   = xlib::XRootWindow(display.id, screen);
-			let width  = xlib::XDisplayWidth(display.id, screen) as u32;
-			let height = xlib::XDisplayHeight(display.id, screen) as u32;
-			let black  = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(display.id, screen));
+	pub fn create(display: Arc<Display>, index: i32) -> error::Result<Window> {
+		let screen = display.get_setup().roots().nth(display.screen() as usize).unwrap();
+		let window = platform::Window::create((**display).clone(), display.screen(),
+			screen.width_in_pixels() as u32, screen.height_in_pixels() as u32)?;
 
-			// We need to pick the visual even if the context isn't actually created
-			// by the locker so the right colormap can be defined, as well as the
-			// window's visual.
-			let info = glx::glXChooseVisual(display.id, screen,
-				[glx::GLX_RGBA, glx::GLX_DEPTH_SIZE, 24, glx::GLX_DOUBLEBUFFER, 0].as_ptr() as *mut _)
-					.as_mut().ok_or(error::Locker::Visual)?;
+		xcb::change_window_attributes(&display, window.id(), &[
+			(xcb::CW_OVERRIDE_REDIRECT, 1)]);
 
-			let colormap = xlib::XCreateColormap(display.id, root, (*info).visual, xlib::AllocNone);
+		xcb::change_property(&display, xcb::PROP_MODE_REPLACE as u8, window.id(),
+			xcb::intern_atom(&display, false, "SCREENRUSTER_SAVER").get_reply()?.atom(),
+			xcb::ATOM_CARDINAL, 32, &[index]);
 
-			let id = {
-				let mut attrs = mem::zeroed(): xlib::XSetWindowAttributes;
-				let mut mask  = 0;
+		let gc = display.generate_id();
+		xcb::create_gc(&display, gc, window.id(), &[(xcb::GC_FOREGROUND, screen.black_pixel())]);
 
-				mask |= xlib::CWColormap;
-				attrs.colormap = colormap;
+		display.flush();
 
-				mask |= xlib::CWBackingStore;
-				attrs.backing_store = xlib::NotUseful;
+		Ok(Window {
+			display: display.clone(),
+			window:  window,
+			gc:      gc,
 
-				mask |= xlib::CWBackingPixel;
-				attrs.backing_pixel = black;
-
-				mask |= xlib::CWBorderPixel;
-				attrs.border_pixel = black;
-
-				mask |= xlib::CWOverrideRedirect;
-				attrs.override_redirect = 1;
-
-				mask |= xlib::CWEventMask;
-				attrs.event_mask = xlib::KeyPressMask | xlib::KeyReleaseMask |
-					xlib::ButtonPressMask | xlib::ButtonReleaseMask |
-					xlib::PointerMotionMask | xlib::ExposureMask;
-
-				xlib::XCreateWindow(display.id, root, 0, 0, width, height, 0, (*info).depth,
-					xlib::InputOutput as c_uint, (*info).visual, mask, &mut attrs)
-			};
-
-			// Make sure the window background is black, this does not clear the window.
-			xlib::XSetWindowBackground(display.id, id, black);
-
-			// Set window property to mark the window as ours.
-			xlib::XChangeProperty(display.id, id, display.atoms.saver, xlib::XA_CARDINAL, 32, xlib::PropModeReplace,
-				&xlib::True as *const _ as *const _, 1);
-
-			// Make the cursor invisible.
-			let cursor = {
-				let bit    = xlib::XCreatePixmapFromBitmapData(display.id, id, b"\x00".as_ptr() as *const _ as *mut _, 1, 1, black, black, 1);
-				let cursor = xlib::XCreatePixmapCursor(display.id, bit, bit, &mut mem::zeroed(), &mut mem::zeroed(), 0, 0);
-
-				xlib::XFreePixmap(display.id, bit);
-				xlib::XDefineCursor(display.id, id, cursor);
-
-				cursor
-			};
-
-			let im = xlib::XOpenIM(display.id, ptr::null_mut(), ptr::null_mut(), ptr::null_mut())
-				.as_mut().ok_or(error::Locker::IM)?;
-
-			let ic = util::with("inputStyle", |input_style|
-				util::with("clientWindow", |client_window|
-					xlib::XCreateIC(im, input_style, xlib::XIMPreeditNothing | xlib::XIMStatusNothing,
-						client_window, id, ptr::null_mut::<()>())))
-							.as_mut().ok_or(error::Locker::IC)?;
-
-			Ok(Window {
-				id:     id,
-				width:  width,
-				height: height,
-
-				display: display,
-				screen:  screen,
-				root:    root,
-				cursor:  cursor,
-				im:      im,
-				ic:      ic,
-
-				locked:   false,
-				keyboard: false,
-				pointer:  false,
-			})
-		}
+			locked:   false,
+			keyboard: false,
+			pointer:  false,
+		})
 	}
 
 	/// Sanitize the window.
 	pub fn sanitize(&mut self) {
-		unsafe {
-			if self.locked {
-				// Try to grab the pointer again in case it wasn't grabbed when locking.
-				if !self.pointer && self.grab(Grab::Pointer).is_ok() {
-					self.pointer = true;
-				}
-
-				// Remap the window in case stuff like popups went above the locker.
-				xlib::XMapRaised(self.display.id, self.id);
+		if self.locked {
+			// Try to grab the pointer again in case it wasn't grabbed when locking.
+			if !self.pointer && self.grab(Grab::Pointer).is_ok() {
+				self.pointer = true;
 			}
 
-			// TODO(meh): Actually sanitize.
-			xlib::XSync(self.display.id, xlib::False);
+			// Remap the window in case stuff like popups went above the locker.
+			xcb::map_window(&self.display, self.id());
+			xcb::configure_window(&self.display, self.id(), &[
+				(xcb::CONFIG_WINDOW_STACK_MODE as u16, xcb::STACK_MODE_ABOVE)]);
 		}
-	}
-
-	/// Resize the window.
-	pub fn resize(&mut self, width: u32, height: u32) {
-		unsafe {
-			if self.width == width && self.height == height {
-				return;
-			}
-
-			self.width  = width;
-			self.height = height;
-
-			xlib::XResizeWindow(self.display.id, self.id, width, height);
-			xlib::XSync(self.display.id, xlib::False);
-		}
-	}
-
-	/// Grab the given input.
-	fn grab(&self, grab: Grab) -> error::Result<()> {
-		unsafe {
-			let result = match grab {
-				Grab::Keyboard => {
-					xlib::XGrabKeyboard(self.display.id, self.id, xlib::False,
-						xlib::GrabModeAsync, xlib::GrabModeAsync, xlib::CurrentTime)
-				}
-
-				Grab::Pointer => {
-					xlib::XGrabPointer(self.display.id, self.id, xlib::False,
-						(xlib::ButtonPressMask | xlib::ButtonReleaseMask | xlib::PointerMotionMask) as c_uint,
-						xlib::GrabModeAsync, xlib::GrabModeAsync, 0,
-						xlib::XBlackPixelOfScreen(xlib::XDefaultScreenOfDisplay(self.display.id)),
-						xlib::CurrentTime)
-				}
-			};
-
-			match result {
-				xlib::GrabSuccess =>
-					Ok(()),
-
-				xlib::AlreadyGrabbed =>
-					Err(error::Grab::Conflict.into()),
-
-				xlib::GrabNotViewable =>
-					Err(error::Grab::Unmapped.into()),
-
-				xlib::GrabFrozen =>
-					Err(error::Grab::Frozen.into()),
-
-				_ =>
-					unreachable!()
-			}
-		}
-	}
-
-	/// Try to grab the given input with 1ms pauses.
-	fn try_grab(&self, grab: Grab, tries: usize) -> error::Result<()> {
-		let mut result = Ok(());
-
-		for _ in 0 .. tries {
-			result = self.grab(grab);
-
-			if result.is_ok() {
-				break;
-			}
-
-			thread::sleep(Duration::from_millis(1));
-		}
-
-		result
 	}
 
 	/// Lock the window.
@@ -239,72 +84,72 @@ impl Window {
 			return Ok(());
 		}
 
-		unsafe {
-			// Map the window and make sure it's raised.
-			xlib::XMapRaised(self.display.id, self.id);
-			xlib::XSync(self.display.id, xlib::False);
+		// Map the window and make sure it's raised.
+		xcb::map_window(&self.display, self.id());
+		xcb::configure_window(&self.display, self.id(), &[
+			(xcb::CONFIG_WINDOW_STACK_MODE as u16, xcb::STACK_MODE_ABOVE)]);
 
-			// Try to grab the keyboard and mouse.
-			self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
-			self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
+		// Try to grab the keyboard and mouse.
+		self.keyboard = self.try_grab(Grab::Keyboard, 500).is_ok();
+		self.pointer  = self.try_grab(Grab::Pointer, 500).is_ok();
 
-			// Some retarded X11 applications grab the keyboard and pointer for long
-			// periods of time for no reason, so try to change focus and grab again.
-			if !self.keyboard || !self.pointer {
-				warn!("could not grab keyboard or pointer, trying to change focus");
+		// Some retarded X11 applications grab the keyboard and pointer for long
+		// periods of time for no reason, so try to change focus and grab again.
+		if !self.keyboard || !self.pointer {
+			warn!("could not grab keyboard or pointer, trying to change focus");
 
-				xlib::XSetInputFocus(self.display.id, self.root, xlib::RevertToPointerRoot, xlib::CurrentTime);
-				xlib::XSync(self.display.id, xlib::False);
+			xcb::set_input_focus(&self.display, xcb::INPUT_FOCUS_POINTER_ROOT as u8, self.id(), xcb::CURRENT_TIME);
+			self.flush();
 
-				// Failing to grab the keyboard is fatal since the window manager or
-				// other applications may be stealing our thunder.
-				if !self.keyboard {
-					if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
-						xlib::XUnmapWindow(self.display.id, self.id);
+			// Failing to grab the keyboard is fatal since the window manager or
+			// other applications may be stealing our thunder.
+			if !self.keyboard {
+				if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
+					xcb::unmap_window(&self.display, self.id());
 
-						error!("coult not grab keyboard: {:?}", err);
-						return Err(err);
-					}
-					else {
-						self.keyboard = true;
-					}
+					error!("coult not grab keyboard: {:?}", err);
+					return Err(err);
 				}
-
-				// TODO(meh): Consider if failing to grab pointer should be fatal,
-				//            probably not.
-				if !self.pointer {
-					if let Err(err) = self.try_grab(Grab::Pointer, 500) {
-						warn!("could not grab pointer: {:?}", err);
-					}
-					else {
-						self.pointer = true;
-					}
+				else {
+					self.keyboard = true;
 				}
 			}
 
-			// Listen for window change events.
-			xlib::XSelectInput(self.display.id, self.root, xlib::SubstructureNotifyMask);
-
-			// If the display supports XRandr listen for screen change events.
-			if self.display.randr.is_some() {
-				xrandr::XRRSelectInput(self.display.id, self.id, xrandr::RRScreenChangeNotifyMask);
+			// TODO(meh): Consider if failing to grab pointer should be fatal,
+			//            probably not.
+			if !self.pointer {
+				if let Err(err) = self.try_grab(Grab::Pointer, 500) {
+					warn!("could not grab pointer: {:?}", err);
+				}
+				else {
+					self.pointer = true;
+				}
 			}
-
-			self.locked = true;
-
-			Ok(())
 		}
+
+		// Listen for window change events.
+		xcb::change_window_attributes(&self.display, self.root(), &[
+			(xcb::CW_EVENT_MASK, xcb::EVENT_MASK_SUBSTRUCTURE_NOTIFY)]);
+
+		// If the display supports XRandr listen for screen change events.
+		if self.display.randr().is_some() {
+			xcb::randr::select_input(&self.display, self.id(),
+				xcb::randr::NOTIFY_MASK_SCREEN_CHANGE as u16);
+		}
+
+		self.locked = true;
+
+		Ok(())
 	}
 
 	/// Make the window solid black.
 	pub fn blank(&mut self) {
-		unsafe {
-			let gc    = xlib::XCreateGC(self.display.id, self.id, 0, ptr::null_mut());
-			let black = xlib::XBlackPixelOfScreen(xlib::XScreenOfDisplay(self.display.id, self.screen));
+		let (width, height) = self.dimensions();
 
-			xlib::XSetForeground(self.display.id, gc, black);
-			xlib::XFillRectangle(self.display.id, self.id, gc, 0, 0, self.width, self.height);
-		}
+		xcb::poly_fill_rectangle(&self.display, self.id(), self.gc, &[
+			xcb::Rectangle::new(0, 0, width as u16, height as u16)]);
+
+		self.flush();
 	}
 
 	/// Unlock the window, hiding and ungrabbing whatever.
@@ -313,25 +158,25 @@ impl Window {
 			return Ok(());
 		}
 
-		unsafe {
-			xlib::XUnmapWindow(self.display.id, self.id);
-			self.locked = false;
+		xcb::ungrab_keyboard(&self.display, xcb::CURRENT_TIME);
+		self.keyboard = false;
 
-			xlib::XUngrabKeyboard(self.display.id, xlib::CurrentTime);
-			self.keyboard = false;
+		xcb::ungrab_pointer(&self.display, xcb::CURRENT_TIME);
+		self.pointer = false;
 
-			xlib::XUngrabPointer(self.display.id, xlib::CurrentTime);
-			self.pointer = false;
+		xcb::unmap_window(&self.display, self.id());
+		self.locked = false;
 
-			Ok(())
-		}
+		self.flush();
+
+		Ok(())
 	}
 }
 
-impl Drop for Window {
-	fn drop(&mut self) {
-		unsafe {
-			xlib::XDestroyWindow(self.display.id, self.id);
-		}
+impl Deref for Window {
+	type Target = platform::Window;
+
+	fn deref(&self) -> &Self::Target {
+		&self.window
 	}
 }

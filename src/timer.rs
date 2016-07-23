@@ -228,38 +228,47 @@ impl Timer {
 		})
 	}
 
+	/// Reset the given timer.
 	pub fn reset(&self, event: Event) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Reset(event))
 	}
 
+	/// Request a report wiht the given id.
 	pub fn report(&self, id: u64) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Report { id: id })
 	}
 
+	/// Request the timers to suspend at the given time.
 	pub fn suspend(&self, value: SystemTime) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Suspend(value))
 	}
 
+	/// Request the timers to resume.
 	pub fn resume(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Resume)
 	}
 
+	/// Notice the screen has been blanked.
 	pub fn blanked(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Blanked)
 	}
 
+	/// Notice the screen has been unblanked.
 	pub fn unblanked(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Unblanked)
 	}
 
+	/// Notice the screen saver has started.
 	pub fn started(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Started)
 	}
 
+	/// Notice the screen has been locked.
 	pub fn locked(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Locked)
 	}
 
+	/// Notice the screen saver was stopped.
 	pub fn stopped(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Stopped)
 	}

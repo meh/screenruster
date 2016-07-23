@@ -1,23 +1,21 @@
-use std::mem;
 use std::thread;
-use std::sync::Arc;
-use std::sync::mpsc::{Receiver, Sender, SendError, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::ops::Deref;
-use std::time::Duration;
 
-use libc::c_uint;
-use x11::{xlib, keysym};
+use xcb;
+use xkbcommon::xkb;
+use xkbcommon::xkb::keysyms as key;
 
 use error;
 use config::Config;
 use saver::{self, Saver};
 use api::{self, Password, Pointer};
-use super::{Display, Window};
+use super::{Window};
+use platform::{Display, Keyboard};
 
 pub struct Preview {
 	receiver: Receiver<Response>,
 	sender:   Sender<Request>,
-	display:  Arc<Display>,
 }
 
 #[derive(Clone)]
@@ -32,119 +30,116 @@ pub enum Response {
 
 impl Preview {
 	pub fn spawn<T: AsRef<str>>(name: T, config: Config) -> error::Result<Preview> {
-		unsafe {
-			let display = Display::open()?;
-			let window  = Window::create(display.clone(), xlib::XDefaultScreen(display.id))?;
+		let     display  = Display::open(None)?;
+		let mut keyboard = Keyboard::new(&display)?;
+		let     window   = Window::create(display.clone())?;
+		let mut saver    = Saver::spawn(name.as_ref())?;
+		let mut throttle = config.saver().throttle();
 
-			let mut saver = Saver::spawn(name.as_ref())?;
-			saver.config(config.saver().get(name)).unwrap();
-			saver.target(display.name(), window.screen, window.id).unwrap();
+		saver.config(config.saver().get(name)).unwrap();
+		saver.target(display.name(), window.screen(), window.id() as u64).unwrap();
 
-			let mut throttle = config.saver().throttle();
-			if throttle {
-				saver.throttle(true).unwrap();
-			}
+		if throttle {
+			saver.throttle(true).unwrap();
+		}
 
-			let (sender, i_receiver) = channel();
-			let (i_sender, receiver) = channel();
+		let (sender, i_receiver) = channel();
+		let (i_sender, receiver) = channel();
 
-			{
-				let display = display.clone();
+		thread::spawn(move || {
+			let x = (*display).as_ref();
+			let s = saver.take().unwrap();
 
-				thread::spawn(move || {
-					let mut event = mem::zeroed();
-
-					'event: loop {
-						// Check if there are any control messages.
-						while let Ok(message) = receiver.try_recv() {
-							match message {
-								_ => ()
-							}
+			loop {
+				select! {
+					// Handle control events.
+					event = receiver.recv() => {
+						match event.unwrap() {
+							_ => ()
 						}
-	
-						// Check if there are any messages from the saver.
-						{
-							while let Some(response) = saver.recv() {
-								match response {
-									saver::Response::Forward(api::Response::Initialized) => {
-										saver.start().unwrap();
-									}
+					},
 
-									saver::Response::Forward(api::Response::Started) => {
-										if saver.was_started() {
-											window.show();
-										}
-										else {
-											saver.kill();
-										}
-									}
+					// Handle saver events.
+					event = s.recv() => {
+						match event.unwrap() {
+							saver::Response::Forward(api::Response::Initialized) => {
+								saver.start().unwrap();
+							}
 
-									saver::Response::Forward(api::Response::Stopped) => {
-										if !saver.was_stopped() {
-											saver.kill();
-										}
-									}
-
-									saver::Response::Exit(..) => {
-										break 'event;
-									}
+							saver::Response::Forward(api::Response::Started) => {
+								if saver.was_started() {
+									window.show();
+								}
+								else {
+									saver.kill();
 								}
 							}
+
+							saver::Response::Forward(api::Response::Stopped) => {
+								if !saver.was_stopped() {
+									saver.kill();
+								}
+							}
+
+							saver::Response::Exit(..) => {
+								break;
+							}
 						}
+					},
 
-						// Check if there are any pending events, or sleep 100ms.
-						if xlib::XPending(display.id) == 0 {
-							thread::sleep(Duration::from_millis(100));
-							continue;
-						}
+					// Handle X events.
+					event = x.recv() => {
+						let event = event.unwrap();
 
-						xlib::XNextEvent(display.id, &mut event);
+						match event.response_type() {
+							// Update keyboard state.
+							e if e == keyboard.first_event() + xcb::xkb::STATE_NOTIFY => {
+								keyboard.update(xcb::cast_event(&event));
+							}
 
-						match event.get_type() {
-							// Handle key presses.
-							xlib::KeyPress => {
-								let key  = xlib::XKeyEvent::from(event);
-								let code = key.keycode;
+							// Handle keyboard input.
+							xcb::KEY_PRESS => {
+								let key = xcb::cast_event(&event): &xcb::KeyPressEvent;
 
-								match xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0) as c_uint {
+								match keyboard.symbol(key.detail() as xkb::Keycode) {
 									// Toggle throttling.
-									keysym::XK_t | keysym::XK_T => {
+									key::KEY_t | key::KEY_T => {
 										throttle = !throttle;
 										saver.throttle(throttle).unwrap();
 									}
 
 									// Stop the preview.
-									keysym::XK_q | keysym::XK_Q => {
+									key::KEY_q | key::KEY_Q => {
 										saver.stop().unwrap();
 									}
 
 									// Test password insertion.
-									keysym::XK_i | keysym::XK_I => {
+									key::KEY_i | key::KEY_I => {
 										saver.password(Password::Insert).unwrap();
 									}
 
 									// Test password deletetion.
-									keysym::XK_d | keysym::XK_D => {
+									key::KEY_d | key::KEY_D => {
 										saver.password(Password::Delete).unwrap();
 									}
 
 									// Test passsword reset.
-									keysym::XK_r | keysym::XK_R => {
+									key::KEY_r | key::KEY_R => {
 										saver.password(Password::Reset).unwrap();
 									}
 
 									// Test password check.
-									keysym::XK_c | keysym::XK_C => {
+									key::KEY_c | key::KEY_C => {
 										saver.password(Password::Check).unwrap();
 									}
 
 									// Test password success.
-									keysym::XK_s | keysym::XK_S => {
+									key::KEY_s | key::KEY_S => {
 										saver.password(Password::Success).unwrap();
 									}
 
 									// Test password failure.
-									keysym::XK_f | keysym::XK_F => {
+									key::KEY_f | key::KEY_F => {
 										saver.password(Password::Failure).unwrap();
 									}
 
@@ -152,43 +147,42 @@ impl Preview {
 								}
 							}
 
-							// Handle mouse buttons.
-							xlib::ButtonPress | xlib::ButtonRelease => {
-								let event = xlib::XButtonEvent::from(event);
+							// Handle mouse button presses.
+							xcb::BUTTON_PRESS | xcb::BUTTON_RELEASE => {
+								let event = xcb::cast_event(&event): &xcb::ButtonPressEvent;
 
 								saver.pointer(Pointer::Button {
-									x: event.x,
-									y: event.y,
+									x: event.event_x() as i32,
+									y: event.event_y() as i32,
 
-									button: event.button as u8,
-									press:  event.type_ == xlib::ButtonPress,
-								}).unwrap()
+									button: event.detail(),
+									press:  event.response_type() == xcb::BUTTON_PRESS,
+								}).unwrap();
 							}
 
-							// Handle mouse movement.
-							xlib::MotionNotify => {
-								let event = xlib::XMotionEvent::from(event);
+							// Handle mouse motion.
+							xcb::MOTION_NOTIFY => {
+								let event = xcb::cast_event(&event): &xcb::MotionNotifyEvent;
 
 								saver.pointer(Pointer::Move {
-									x: event.x,
-									y: event.y,
+									x: event.event_x() as i32,
+									y: event.event_y() as i32,
 								}).unwrap();
 							}
 
 							_ => ()
 						}
 					}
-
-					sender.send(Response::Done(sender.clone())).unwrap();
-				});
+				}
 			}
 
-			Ok(Preview {
-				receiver: i_receiver,
-				sender:   i_sender,
-				display:  display,
-			})
-		}
+			sender.send(Response::Done(sender.clone())).unwrap();
+		});
+
+		Ok(Preview {
+			receiver: i_receiver,
+			sender:   i_sender,
+		})
 	}
 }
 

@@ -24,6 +24,8 @@ extern crate log;
 extern crate env_logger;
 
 extern crate clap;
+use clap::{ArgMatches, Arg, App, SubCommand};
+
 extern crate xdg;
 extern crate toml;
 extern crate rand;
@@ -34,20 +36,19 @@ extern crate dbus;
 extern crate pam_sys as pam;
 
 extern crate libc;
-extern crate x11;
+extern crate xcb;
+extern crate xkbcommon;
 
 #[macro_use]
 extern crate screenruster_saver as api;
-
-use clap::{ArgMatches, Arg, App, SubCommand};
-
-#[macro_use]
-mod util;
 
 mod error;
 
 mod config;
 use config::Config;
+
+mod platform;
+mod saver;
 
 mod preview;
 use preview::Preview;
@@ -63,8 +64,6 @@ use server::Server;
 
 mod timer;
 use timer::Timer;
-
-mod saver;
 
 fn main() {
 	env_logger::init().unwrap();

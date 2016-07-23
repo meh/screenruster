@@ -9,24 +9,8 @@ description = "X11 screen saver and locker."
 repository  = "https://github.com/meh/screenruster"
 keywords    = ["x11", "graphics"]
 
-[dependencies]
-log        = "0.3"
-env_logger = "0.3"
-
-clap  = "2"
-xdg   = "2"
-toml  = "0.1"
-rand  = "0.3"
-users = "0.5"
-dbus  = "0.3"
-
-libc               = "0.2"
-x11                = { version = "2", features = ["xlib", "glx", "xrandr", "dpms"] }
-screenruster-saver = "0.1"
-
-[dependencies.pam-sys]
-version = "0.4"
-optional = true
+[profile.release]
+lto = true
 
 [features]
 default = ["auth-pam"]
@@ -39,3 +23,23 @@ auth-pam = ["pam-sys"]
 
 # Respect PAM account management.
 auth-pam-accounts = ["auth-pam"]
+
+[dependencies]
+log        = "0.3"
+env_logger = "0.3"
+
+clap  = "2"
+xdg   = "2"
+toml  = "0.1"
+rand  = "0.3"
+users = "0.5"
+dbus  = "0.3"
+
+libc               = "0.2"
+xcb                = { version = "0.7", features = ["randr", "dpms", "xkb"] }
+xkbcommon          = { version = "0.2", features = ["x11"], git = "https://github.com/meh/xkbcommon-rs" }
+screenruster-saver = "0.1"
+
+[dependencies.pam-sys]
+version = "0.4"
+optional = true

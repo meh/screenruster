@@ -15,44 +15,19 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ptr;
-use std::sync::Arc;
-use std::ffi::CStr;
+use std::ops::Deref;
 
-use x11::xlib;
+use xcb;
 
-use error;
+pub struct Event(pub xcb::GenericEvent);
 
-#[derive(Debug)]
-pub struct Display {
-	pub id: *mut xlib::Display,
-}
+unsafe impl Send for Event { }
+unsafe impl Sync for Event { }
 
-unsafe impl Send for Display { }
-unsafe impl Sync for Display { }
+impl Deref for Event {
+	type Target = xcb::GenericEvent;
 
-impl Display {
-	pub fn open() -> error::Result<Arc<Display>> {
-		unsafe {
-			let id = xlib::XOpenDisplay(ptr::null());
-
-			Ok(Arc::new(Display {
-				id: id
-			}))
-		}
-	}
-
-	pub fn name(&self) -> &str {
-		unsafe {
-			CStr::from_ptr(xlib::XDisplayString(self.id)).to_str().unwrap()
-		}
-	}
-}
-
-impl Drop for Display {
-	fn drop(&mut self) {
-		unsafe {
-			xlib::XCloseDisplay(self.id);
-		}
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }

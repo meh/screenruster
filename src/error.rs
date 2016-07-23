@@ -19,6 +19,7 @@ use std::fmt;
 use std::error;
 use std::io;
 
+use xcb;
 use dbus;
 use clap;
 
@@ -31,25 +32,24 @@ pub enum Error {
 	Unknown,
 	Parse,
 
+	X(X),
 	DBus(DBus),
 	Cli(clap::Error),
-	Locker(Locker),
 	Grab(Grab),
 	Auth(Auth),
+}
+
+#[derive(Debug)]
+pub enum X {
+	MissingExtension,
+	Request(u8, u8),
+	Connection(xcb::ConnError),
 }
 
 #[derive(Debug)]
 pub enum DBus {
 	AlreadyRegistered,
 	Internal(dbus::Error),
-}
-
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Locker {
-	Display,
-	Visual,
-	IM,
-	IC,
 }
 
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
@@ -103,6 +103,24 @@ impl From<()> for Error {
 	}
 }
 
+impl From<X> for Error {
+	fn from(value: X) -> Error {
+		Error::X(value)
+	}
+}
+
+impl From<xcb::ConnError> for Error {
+	fn from(value: xcb::ConnError) -> Error {
+		Error::X(X::Connection(value))
+	}
+}
+
+impl<T> From<xcb::Error<T>> for Error {
+	fn from(value: xcb::Error<T>) -> Error {
+		Error::X(X::Request(value.response_type(), value.error_code()))
+	}
+}
+
 impl From<dbus::Error> for Error {
 	fn from(value: dbus::Error) -> Self {
 		Error::DBus(DBus::Internal(value))
@@ -118,12 +136,6 @@ impl From<clap::Error> for Error {
 impl From<DBus> for Error {
 	fn from(value: DBus) -> Self {
 		Error::DBus(value)
-	}
-}
-
-impl From<Locker> for Error {
-	fn from(value: Locker) -> Self {
-		Error::Locker(value)
 	}
 }
 
@@ -174,6 +186,17 @@ impl error::Error for Error {
 			Error::Parse =>
 				"Parse error.",
 
+			Error::X(ref err) => match *err {
+				X::Request(..) =>
+					"An X request failed.",
+
+				X::MissingExtension =>
+					"A required X extension is missing.",
+
+				X::Connection(..) =>
+					"Connection to the X display failed.",
+			},
+
 			Error::DBus(ref err) => match *err {
 				DBus::AlreadyRegistered =>
 					"The name has already been registered.",
@@ -184,20 +207,6 @@ impl error::Error for Error {
 
 			Error::Cli(ref err) =>
 				err.description(),
-
-			Error::Locker(ref err) => match *err {
-				Locker::Display =>
-					"No display found.",
-
-				Locker::Visual =>
-					"No proper visual found.",
-
-				Locker::IM =>
-					"No proper IM found.",
-
-				Locker::IC =>
-					"No proper IC found",
-			},
 
 			Error::Grab(ref err) => match *err {
 				Grab::Conflict =>
@@ -224,7 +233,6 @@ impl error::Error for Error {
 				Auth::Pam(auth::Pam(_code)) =>
 					"PAM error.",
 			},
-
 		}
 	}
 }

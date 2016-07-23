@@ -15,25 +15,22 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::ptr;
-use std::mem;
-use std::str;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use std::thread;
-use std::time::Duration;
 use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
-use std::sync::Arc;
 
 use rand::{self, Rng};
-use x11::{xlib, keysym, xrandr};
-use libc::{c_int, c_uint};
+use xcb;
+use xkbcommon::xkb;
+use xkbcommon::xkb::keysyms as key;
 
 use error;
 use config::Config;
 use api;
 use saver::{self, Saver, Password, Pointer};
 use super::{Display, Window};
+use platform::Keyboard;
 
 /// The actual locker.
 ///
@@ -43,11 +40,9 @@ use super::{Display, Window};
 ///            be stuck or trying to ruse us.
 ///
 /// TODO(meh): Consider timeouts for other saver commands.
-#[derive(Debug)]
 pub struct Locker {
 	receiver: Receiver<Response>,
 	sender:   Sender<Request>,
-	display:  Arc<Display>,
 }
 
 #[derive(Clone)]
@@ -71,212 +66,203 @@ pub enum Response {
 
 impl Locker {
 	pub fn spawn(config: Config) -> error::Result<Locker> {
-		unsafe {
-			let display = Display::open(config.locker())?;
-			display.sanitize();
+		let     display  = Display::open(config.locker())?;
+		let mut keyboard = Keyboard::new(&display)?;
+		let mut windows  = HashMap::new(): HashMap<u32, Window>;
+		let mut savers   = HashMap::new(): HashMap<u32, Saver>;
+		let mut checking = false;
+		let mut password = String::new();
 
-			let mut windows = HashMap::new(): HashMap<xlib::Window, Window>;
+		for screen in 0 .. display.screens() {
+			let window = Window::create(display.clone(), screen as i32)?;
 
-			for screen in 0 .. xlib::XScreenCount(display.id) {
-				let window = Window::create(display.clone(), screen)?;
+			display.observe(window.root());
+			windows.insert(window.id(), window);
+		}
 
-				display.observe(window.root);
-				windows.insert(window.id, window);
+		let (sender,   i_receiver)   = channel();
+		let (i_sender, receiver)   = channel();
+		let (s_sender, s_receiver) = channel();
+
+		thread::spawn(move || {
+			macro_rules! saver {
+				($id:expr) => (
+					savers.get_mut(&$id).unwrap()
+				);
 			}
 
-			let (sender, i_receiver) = channel();
-			let (i_sender, receiver) = channel();
+			macro_rules! window {
+				($id:expr) => (
+					windows.get_mut(&$id).unwrap()
+				);
+			}
 
-			// FIXME(meh): The whole `XPending` check and sleeping for 100ms to then
-			//             `try_recv` on the channels is very fragile.
-			//
-			//             Find a better way to do it that plays well with Xlib's
-			//             threading model (yeah, right, guess moving to XCB would be
-			//             the right way, or reimplementing it properly for Rust).
-			{
-				let display = display.clone();
+			let x = (***display).as_ref();
 
-				thread::spawn(move || {
-					let mut savers   = HashMap::new(): HashMap<xlib::Window, Saver>;
-					let mut checking = false;
-					let mut password = String::new();
-					let mut event    = mem::zeroed(): xlib::XEvent;
+			loop {
+				select! {
+					// Handle control events.
+					event = receiver.recv() => {
+						match event.unwrap() {
+							Request::Sanitize => {
+								display.sanitize();
 
-					loop {
-						// Check if there are any control messages.
-						while let Ok(message) = receiver.try_recv() {
-							match message {
-								Request::Sanitize => {
-									display.sanitize();
+								for window in windows.values_mut() {
+									window.sanitize();
+								}
+							}
 
-									for window in windows.values_mut() {
-										window.sanitize();
-									}
+							Request::Activity => {
+								sender.send(Response::Activity).unwrap();
+							}
+
+							Request::Throttle(value) => {
+								for saver in savers.values_mut() {
+									saver.throttle(value).unwrap();
+								}
+							}
+
+							Request::Power(value) => {
+								for saver in savers.values_mut() {
+									saver.blank(!value).unwrap();
 								}
 
-								Request::Activity => {
-									sender.send(Response::Activity).unwrap();
-								}
+								display.power(value);
+							}
 
-								Request::Throttle(value) => {
-									for saver in savers.values_mut() {
-										saver.throttle(value).unwrap();
-									}
-								}
+							Request::Start => {
+								for window in windows.values_mut() {
+									if !config.saver().using().is_empty() {
+										let name = &config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
-								Request::Power(value) => {
-									for saver in savers.values_mut() {
-										saver.blank(!value).unwrap();
-									}
+										if let Ok(mut saver) = Saver::spawn(&name) {
+											let id       = window.id();
+											let receiver = saver.take().unwrap();
+											let sender   = s_sender.clone();
 
-									display.power(value);
-								}
-
-								Request::Start => {
-									for window in windows.values_mut() {
-										if !config.saver().using().is_empty() {
-											let name = &config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
-
-											if let Ok(mut saver) = Saver::spawn(&name) {
-												saver.config(config.saver().get(&name)).unwrap();
-												saver.target(display.name(), window.screen, window.id).unwrap();
-
-												if config.saver().throttle() {
-													saver.throttle(true).unwrap();
+											thread::spawn(move || {
+												while let Ok(event) = receiver.recv() {
+													sender.send((id, event)).unwrap();
 												}
+											});
 
-												savers.insert(window.id, saver);
-												continue;
+											saver.config(config.saver().get(&name)).unwrap();
+											saver.target(display.name(), window.screen(), id as u64).unwrap();
+
+											if config.saver().throttle() {
+												saver.throttle(true).unwrap();
 											}
-										}
 
-										// FIXME(meh): Do not crash on grab failure.
-										window.lock().unwrap();
-										window.blank();
-									}
-								}
+											savers.insert(id, saver);
 
-								Request::Lock => {
-									password = String::new();
-
-									for saver in savers.values_mut() {
-										saver.lock().unwrap();
-									}
-								}
-
-								Request::Auth(state) => {
-									checking = false;
-
-									for saver in savers.values_mut() {
-										saver.password(if state { Password::Success } else { Password::Failure }).unwrap();
-									}
-								}
-
-								Request::Stop => {
-									for window in windows.values_mut() {
-										if let Some(saver) = savers.get_mut(&window.id) {
-											saver.stop().unwrap();
-										}
-										else {
-											window.unlock().unwrap();
+											continue;
 										}
 									}
-								}
-							}
 
-							continue;
-						}
-
-						// Check if there are any messages from savers.
-						{
-							let mut stopped = HashSet::new();
-							let mut exited  = HashSet::new();
-
-							for (&id, saver) in &mut savers {
-								while let Some(response) = saver.recv() {
-									match response {
-										saver::Response::Forward(api::Response::Initialized) => {
-											saver.start().unwrap();
-										}
-
-										saver::Response::Forward(api::Response::Started) => {
-											if saver.was_started() {
-												// FIXME(meh): Do not crash on grab failure.
-												windows.get_mut(&id).unwrap().lock().unwrap();
-											}
-											else {
-												saver.kill();
-											}
-										}
-
-										saver::Response::Forward(api::Response::Stopped) => {
-											if saver.was_stopped() {
-												stopped.insert(id);
-											}
-											else {
-												saver.kill();
-											}
-										}
-
-										saver::Response::Exit(..) => {
-											exited.insert(id);
-										}
-									}
-								}
-							}
-
-							for id in &exited {
-								stopped.remove(id);
-
-								let saver  = savers.remove(id).unwrap();
-								let window = windows.get_mut(id).unwrap();
-
-								if !saver.was_stopped() {
+									// FIXME(meh): Do not crash on grab failure.
 									window.lock().unwrap();
 									window.blank();
 								}
-								else {
-									window.unlock().unwrap();
+							}
+
+							Request::Lock => {
+								password = String::new();
+
+								for saver in savers.values_mut() {
+									saver.lock().unwrap();
 								}
 							}
 
-							// Unlock the stopped savers.
-							for id in &stopped {
-								windows.get_mut(id).unwrap().unlock().unwrap();
-								savers.remove(id);
+							Request::Auth(state) => {
+								checking = false;
+
+								for saver in savers.values_mut() {
+									saver.password(if state { Password::Success } else { Password::Failure }).unwrap();
+								}
+							}
+
+							Request::Stop => {
+								for window in windows.values_mut() {
+									if let Some(saver) = savers.get_mut(&window.id()) {
+										saver.stop().unwrap();
+									}
+									else {
+										window.unlock().unwrap();
+									}
+								}
 							}
 						}
+					},
 
-						// Check if there are any pending events, or sleep 100ms.
-						if xlib::XPending(display.id) == 0 {
-							thread::sleep(Duration::from_millis(100));
-							continue;
+					// Handle saver events.
+					event = s_receiver.recv() => {
+						let (id, event) = event.unwrap();
+
+						match event {
+							saver::Response::Forward(api::Response::Initialized) => {
+								saver!(id).start().unwrap();
+							}
+
+							saver::Response::Forward(api::Response::Started) => {
+								if saver!(id).was_started() {
+									// FIXME(meh): Do not crash on grab failure.
+									window!(id).lock().unwrap();
+								}
+								else {
+									saver!(id).kill();
+								}
+							}
+
+							saver::Response::Forward(api::Response::Stopped) => {
+								if !saver!(id).was_stopped() {
+									saver!(id).kill();
+								}
+							}
+
+							saver::Response::Exit(..) => {
+								if saver!(id).was_stopped() {
+									window!(id).unlock().unwrap();
+								}
+								else {
+									window!(id).lock().unwrap();
+									window!(id).blank();
+								}
+
+								savers.remove(&id);
+							}
 						}
+					},
 
-						xlib::XNextEvent(display.id, &mut event);
-						let any = xlib::XAnyEvent::from(event);
+					// Handle X events.
+					event = x.recv() => {
+						let event = event.unwrap();
 
-						match event.get_type() {
+						match event.response_type() {
 							// Handle screen changes.
-							e if display.randr.as_ref().map_or(false, |rr| e == rr.event(xrandr::RRScreenChangeNotify)) => {
-								let event = xrandr::XRRScreenChangeNotifyEvent::from(event);
+							e if display.randr().map_or(false, |rr| e == rr.first_event() + xcb::randr::SCREEN_CHANGE_NOTIFY) => {
+								let event = xcb::cast_event(&event): &xcb::randr::ScreenChangeNotifyEvent;
 
 								for window in windows.values_mut() {
-									if window.root == event.root {
-										window.resize(event.width as u32, event.height as u32);
+									if window.root() == event.root() {
+										window.resize(event.width() as u32, event.height() as u32);
 
-										if let Some(saver) = savers.get_mut(&window.id) {
-											saver.resize(event.width as u32, event.height as u32).unwrap();
+										if let Some(saver) = savers.get_mut(&window.id()) {
+											saver.resize(event.width() as u32, event.height() as u32).unwrap();
 										}
 									}
 								}
+							}
+
+							// Update keyboard state.
+							e if e == keyboard.first_event() + xcb::xkb::STATE_NOTIFY => {
+								keyboard.update(xcb::cast_event(&event));
 							}
 
 							// Handle keyboard input.
 							//
 							// Note we only act on key presses because `Xutf8LookupString`
 							// only generates strings from `KeyPress` events.
-							xlib::KeyPress => {
+							xcb::KEY_PRESS => {
 								sender.send(Response::Activity).unwrap();
 
 								// Ignore keyboard input while checking authentication.
@@ -284,13 +270,11 @@ impl Locker {
 									continue;
 								}
 
-								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									let mut key  = xlib::XKeyEvent::from(event);
-									let     code = key.keycode;
-
-									match xlib::XKeycodeToKeysym(window.display.id, code as xlib::KeyCode, 0) as c_uint {
+								let event = xcb::cast_event(&event): &xcb::KeyPressEvent;
+								if let Some(_window) = windows.values().find(|w| w.id() == event.event()) {
+									match keyboard.symbol(event.detail() as xkb::Keycode) {
 										// Delete a character.
-										keysym::XK_BackSpace => {
+										key::KEY_BackSpace => {
 											password.pop();
 
 											for saver in savers.values_mut() {
@@ -299,7 +283,7 @@ impl Locker {
 										}
 
 										// Clear the password.
-										keysym::XK_Escape => {
+										key::KEY_Escape => {
 											password.clear();
 
 											for saver in savers.values_mut() {
@@ -308,7 +292,7 @@ impl Locker {
 										}
 
 										// Check authentication.
-										keysym::XK_Return => {
+										key::KEY_Return => {
 											checking = true;
 
 											for saver in savers.values_mut() {
@@ -324,13 +308,7 @@ impl Locker {
 											// pressed is not going to OOM us in the extremely long
 											// run.
 											if password.len() <= 255 {
-												let mut ic_sym = 0;
-												let mut buffer = [0u8; 16];
-												let     count  = xlib::Xutf8LookupString(window.ic, &mut key,
-													mem::transmute(buffer.as_mut_ptr()), buffer.len() as c_int,
-													&mut ic_sym, ptr::null_mut());
-
-												for ch in str::from_utf8(&buffer[..count as usize]).unwrap_or("").chars() {
+												for ch in keyboard.string(event.detail() as xkb::Keycode).chars() {
 													password.push(ch);
 
 													for saver in savers.values_mut() {
@@ -343,62 +321,60 @@ impl Locker {
 								}
 							}
 
-							xlib::KeyRelease => {
+							xcb::KEY_RELEASE => {
 								sender.send(Response::Activity).unwrap();
 							}
 
 							// Handle mouse button presses.
-							xlib::ButtonPress | xlib::ButtonRelease => {
+							xcb::BUTTON_PRESS | xcb::BUTTON_RELEASE => {
 								sender.send(Response::Activity).unwrap();
 
-								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									if let Some(saver) = savers.get_mut(&window.id) {
-										let event = xlib::XButtonEvent::from(event);
-
+								let event = xcb::cast_event(&event): &xcb::ButtonPressEvent;
+								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
+									if let Some(saver) = savers.get_mut(&window.id()) {
 										saver.pointer(Pointer::Button {
-											x: event.x,
-											y: event.y,
+											x: event.event_x() as i32,
+											y: event.event_y() as i32,
 
-											button: event.button as u8,
-											press:  event.type_ == xlib::ButtonPress,
+											button: event.detail(),
+											press:  event.response_type() == xcb::BUTTON_PRESS,
 										}).unwrap()
 									}
 								}
 							}
 
 							// Handle mouse motion.
-							xlib::MotionNotify => {
+							xcb::MOTION_NOTIFY => {
 								sender.send(Response::Activity).unwrap();
 
-								if let Some(window) = windows.values().find(|w| w.id == any.window) {
-									if let Some(saver) = savers.get_mut(&window.id) {
-										let event = xlib::XMotionEvent::from(event);
-
+								let event = xcb::cast_event(&event): &xcb::MotionNotifyEvent;
+								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
+									if let Some(saver) = savers.get_mut(&window.id()) {
 										saver.pointer(Pointer::Move {
-											x: event.x,
-											y: event.y,
+											x: event.event_x() as i32,
+											y: event.event_y() as i32,
 										}).unwrap();
 									}
 								}
 							}
 
 							// On window changes, try to observe the window.
-							xlib::MapNotify | xlib::ConfigureNotify => {
-								display.observe(any.window);
+							xcb::MAP_NOTIFY | xcb::CONFIGURE_NOTIFY => {
+								let event = xcb::cast_event(&event): &xcb::MapNotifyEvent;
+								display.observe(event.window());
 							}
 
 							_ => ()
 						}
 					}
-				});
+				}
 			}
+		});
 
-			Ok(Locker {
-				receiver: i_receiver,
-				sender:   i_sender,
-				display:  display,
-			})
-		}
+		Ok(Locker {
+			receiver: i_receiver,
+			sender:   i_sender,
+		})
 	}
 
 	pub fn sanitize(&self) -> Result<(), SendError<Request>> {

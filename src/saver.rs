@@ -42,7 +42,7 @@ use error;
 
 pub struct Saver {
 	process:  Arc<Mutex<Child>>,
-	receiver: Receiver<Response>,
+	receiver: Option<Receiver<Response>>,
 	sender:   Sender<Request>,
 
 	started: bool,
@@ -76,7 +76,7 @@ impl Deref for Exit {
 }
 
 impl Saver {
-	/// Spawn a saver with the given name.
+	/// Spawn the saver with the given name.
 	pub fn spawn<S: AsRef<str>>(name: S) -> error::Result<Saver> {
 		let child = Arc::new(Mutex::new(Command::new(format!("screenruster-saver-{}", name.as_ref()))
 			.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
@@ -237,7 +237,7 @@ impl Saver {
 
 		Ok(Saver {
 			process:  child,
-			receiver: i_receiver,
+			receiver: Some(i_receiver),
 			sender:   i_sender,
 
 			started: false,
@@ -245,30 +245,43 @@ impl Saver {
 		})
 	}
 
+	/// Check if the saver was requested to start.
 	pub fn was_started(&self) -> bool {
 		self.started
 	}
 
+	/// Check if the saver was requested to stop.
 	pub fn was_stopped(&self) -> bool {
 		self.stopped
 	}
 
+	/// Kill the saver process.
 	pub fn kill(&mut self) {
 		let _ = self.process.lock().unwrap().kill();
 	}
 
+	/// Take the internal receiver.
+	pub fn take(&mut self) -> Option<Receiver<Response>> {
+		self.receiver.take()
+	}
+
 	/// Try to receive a message from the saver.
 	pub fn recv(&mut self) -> Option<Response> {
-		match self.receiver.try_recv() {
-			Ok(response) =>
-				Some(response),
+		if let Some(receiver) = self.receiver.as_ref() {
+			match receiver.try_recv() {
+				Ok(response) =>
+					Some(response),
 
-			Err(TryRecvError::Empty) =>
-				None,
+				Err(TryRecvError::Empty) =>
+					None,
 
-			Err(TryRecvError::Disconnected) => {
-				None
+				Err(TryRecvError::Disconnected) => {
+					None
+				}
 			}
+		}
+		else {
+			None
 		}
 	}
 

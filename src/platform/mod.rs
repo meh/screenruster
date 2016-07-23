@@ -15,27 +15,20 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::time::Duration;
-use std::ffi::CString;
-
-use libc::c_char;
-
-pub trait DurationExt {
-	fn as_msecs(&self) -> u64;
-	fn as_nanosecs(&self) -> u64;
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Grab {
+	Keyboard,
+	Pointer,
 }
 
-impl DurationExt for Duration {
-	fn as_msecs(&self) -> u64 {
-		self.as_secs() * 1_000 + (self.subsec_nanos() / 1_000_000) as u64
-	}
+mod event;
+pub use self::event::Event;
 
-	fn as_nanosecs(&self) -> u64 {
-		self.as_secs() * 1_000_000_000 + self.subsec_nanos() as u64
-	}
-}
+mod display;
+pub use self::display::Display;
 
-pub fn with<S: AsRef<str>, T, F: FnOnce(*const c_char) -> T>(string: S, func: F) -> T {
-	let string = CString::new(string.as_ref().as_bytes()).unwrap();
-	func(string.as_ptr())
-}
+mod window;
+pub use self::window::Window;
+
+mod keyboard;
+pub use self::keyboard::Keyboard;

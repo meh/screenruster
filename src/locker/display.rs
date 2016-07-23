@@ -15,167 +15,94 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::mem;
-use std::ptr;
-use std::ffi::CStr;
 use std::sync::Arc;
+use std::ops::Deref;
 
-use libc::c_int;
-use x11::{xlib, xrandr, dpms, xmd};
+use xcb;
 
 use error;
 use config;
-use util;
+use platform;
 
-#[derive(Debug)]
 pub struct Display {
-	pub id:    *mut xlib::Display,
-	pub randr: Option<Extension>,
-	pub dpms:  Option<Extension>,
+	display: Arc<platform::Display>,
 
-	pub atoms: Atoms,
+	randr: Option<xcb::QueryExtensionData>,
+	dpms:  Option<xcb::QueryExtensionData>,
 }
 
 unsafe impl Send for Display { }
 unsafe impl Sync for Display { }
 
-#[derive(Debug)]
-pub struct Atoms {
-	pub saver: xlib::Atom,
-}
-
-#[derive(Debug)]
-pub struct Extension {
-	event: c_int,
-	error: c_int,
-}
-
-impl Extension {
-	#[inline(always)]
-	pub fn event(&self, event: c_int) -> c_int {
-		self.event + event
-	}
-
-	#[inline(always)]
-	pub fn error(&self, error: c_int) -> c_int {
-		self.error + error
-	}
-}
-
-macro_rules! try {
-	($body:expr) => (
-		if $body != xlib::True {
-			return;
-		}
-	);
-}
-
-unsafe extern "C" fn report(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
-	let mut buffer = [0i8; 1024];
-
-	xlib::XGetErrorText(display, (*error).error_code as c_int, buffer.as_mut_ptr(), 1024);
-
-	error!("X11: display={:?} id={:?} serial={:?} code={:?} request={:?} minor={:?} error={:?}",
-		CStr::from_ptr(xlib::XDisplayString(display)).to_str().unwrap(),
-		(*error).resourceid,
-		(*error).serial,
-		(*error).error_code,
-		(*error).request_code,
-		(*error).minor_code,
-		CStr::from_ptr(buffer.as_ptr()).to_str().unwrap());
-
-	0
-}
-
 impl Display {
-	/// Open the default display.
+	/// Open the display.
 	pub fn open(config: config::Locker) -> error::Result<Arc<Display>> {
-		unsafe {
-			let id = if let Some(name) = config.display() {
-				util::with(name, |name| xlib::XOpenDisplay(name))
+		let     display = platform::Display::open(config.display())?;
+		let     randr   = display.get_extension_data(xcb::randr::id());
+		let mut dpms    = display.get_extension_data(xcb::dpms::id());
+
+		if randr.is_some() {
+			let cookie = xcb::randr::query_version(&display, 1, 1);
+			let reply  = cookie.get_reply()?;
+
+			if reply.major_version() < 1 || (reply.major_version() >= 1 && reply.minor_version() < 1) {
+				return Err(error::X::MissingExtension.into());
 			}
-			else {
-				xlib::XOpenDisplay(ptr::null())
-			}.as_mut().ok_or(error::Locker::Display)?;
-
-			xlib::XSetErrorHandler(Some(report));
-
-			Ok(Arc::new(Display {
-				id: id,
-
-				randr: {
-					let mut event = 0;
-					let mut error = 0;
-
-					if xrandr::XRRQueryExtension(id, &mut event, &mut error) == xlib::True {
-						Some(Extension { event: event, error: error })
-					}
-					else {
-						None
-					}
-				},
-
-				dpms: {
-					let mut event = 0;
-					let mut error = 0;
-
-					if config.dpms() &&
-					   dpms::DPMSQueryExtension(id, &mut event, &mut error) == xlib::True &&
-					   dpms::DPMSCapable(id) == xlib::True
-					{
-						// DPMS needs to be enabled for `DPMSForceLevel` to actually work,
-						// so we just put maximum timeout and handle the states ourselves.
-						dpms::DPMSSetTimeouts(id, 0xffff, 0xffff, 0xffff);
-						dpms::DPMSEnable(id);
-
-						Some(Extension { event: event, error: error })
-					}
-					else {
-						None
-					}
-				},
-
-				atoms: Atoms {
-					saver: util::with("SCREENRUSTER_SAVER", |name| xlib::XInternAtom(id, name, xlib::False)),
-				},
-			}))
 		}
+
+		if let Some(ext) = dpms.take() {
+			if config.dpms() && xcb::dpms::capable(&display).get_reply()?.capable() {
+				dpms = Some(ext);
+			}
+		}
+
+		let display = Arc::new(Display {
+			display: display,
+
+			randr: randr,
+			dpms:  dpms,
+		});
+
+		display.sanitize();
+
+		Ok(display)
 	}
 
-	/// Get the display name.
-	pub fn name(&self) -> &str {
-		unsafe {
-			CStr::from_ptr(xlib::XDisplayString(self.id)).to_str().unwrap()
-		}
+	/// Get the XRandr extension data.
+	pub fn randr(&self) -> Option<&xcb::QueryExtensionData> {
+		self.randr.as_ref()
+	}
+
+	/// Get the DPMS extension data.
+	pub fn dpms(&self) -> Option<&xcb::QueryExtensionData> {
+		self.dpms.as_ref()
 	}
 
 	/// Check if the monitor is powered on or not.
 	pub fn is_powered(&self) -> bool {
-		if self.dpms.is_some() {
-			unsafe {
-				let mut level = 0;
-				let mut state = 0;
+		if self.dpms.is_none() {
+			return true;
+		}
 
-				dpms::DPMSInfo(self.id, &mut level, &mut state);
+		if let Ok(reply) = xcb::dpms::info(self).get_reply() {
+			if !reply.state() {
+				return true;
+			}
 
-				if state == xlib::False as xmd::BOOL {
-					return true;
-				}
+			match reply.power_level() as u32 {
+				xcb::dpms::DPMS_MODE_ON =>
+					true,
 
-				match level {
-					dpms::DPMSModeOn =>
-						true,
+				xcb::dpms::DPMS_MODE_OFF |
+				xcb::dpms::DPMS_MODE_STANDBY |
+				xcb::dpms::DPMS_MODE_SUSPEND =>
+					false,
 
-					dpms::DPMSModeOff | dpms::DPMSModeStandby | dpms::DPMSModeSuspend =>
-						false,
-
-					_ =>
-						unreachable!()
-				}
+				_ => unreachable!()
 			}
 		}
 		else {
-			true
+			false
 		}
 	}
 
@@ -185,78 +112,71 @@ impl Display {
 			return;
 		}
 
-		unsafe {
-			dpms::DPMSForceLevel(self.id, if value { dpms::DPMSModeOn } else { dpms::DPMSModeOff });
-			xlib::XSync(self.id, xlib::False);
-		}
+		xcb::dpms::force_level(self, if value {
+			xcb::dpms::DPMS_MODE_ON
+		} else {
+			xcb::dpms::DPMS_MODE_OFF
+		} as u16);
+
+		self.flush();
 	}
 
 	/// Sanitize the display from bad X11 things.
 	pub fn sanitize(&self) {
-		unsafe {
-			// Reset DPMS settings to usable.
-			if self.dpms.is_some() {
-				dpms::DPMSSetTimeouts(self.id, 0xffff, 0xffff, 0xffff);
-				dpms::DPMSEnable(self.id);
-			}
-
-			// Reset screen saver timeout.
-			xlib::XSetScreenSaver(self.id, 0, 0, 0, xlib::AllowExposures);
+		// Reset DPMS settings to usable.
+		if self.dpms.is_some() {
+			xcb::dpms::set_timeouts(self, 0, 0, 0);
+			xcb::dpms::enable(self);
 		}
+
+		// Reset screen saver timeout.
+		xcb::set_screen_saver(self, 0, 0, 0, xcb::EXPOSURES_ALLOWED as u8);
 	}
 
 	/// Observe events on the given window and all its children.
-	pub fn observe(&self, window: xlib::Window) {
-		unsafe {
-			let mut root     = mem::zeroed();
-			let mut parent   = mem::zeroed();
-			let mut children = mem::zeroed();
-			let mut count    = mem::zeroed();
+	pub fn observe(&self, window: u32) {
+		macro_rules! try {
+			($body:expr) => (
+				if let Ok(value) = $body {
+					value
+				}
+				else {
+					return;
+				}
+			);
+		}
 
-			try!(xlib::XQueryTree(self.id, window, &mut root, &mut parent, &mut children, &mut count));
+		let query = try!(xcb::query_tree(self, window).get_reply());
 
-			// Return if the window is one of ours.
-			{
-				let mut kind   = mem::zeroed();
-				let mut format = mem::zeroed();
-				let mut count  = mem::zeroed();
-				let mut after  = mem::zeroed();
-				let mut values = mem::zeroed();
+		// Return if the window is one of ours.
+		{
+			let reply = xcb::get_property(self, false, window,
+				xcb::intern_atom(self, false, "SCREENRUSTER_SAVER").get_reply().unwrap().atom(),
+				xcb::ATOM_CARDINAL, 0, 1).get_reply();
 
-				xlib::XGetWindowProperty(self.id, window, self.atoms.saver, 0, 1, xlib::False, xlib::XA_CARDINAL,
-					&mut kind, &mut format, &mut count, &mut after, &mut values);
-
-				if kind == xlib::XA_CARDINAL {
+			if let Ok(reply) = reply {
+				if reply.type_() == xcb::ATOM_CARDINAL {
 					return;
 				}
 			}
+		}
 
-			let mut attrs = mem::zeroed();
-			try!(xlib::XGetWindowAttributes(self.id, window, &mut attrs));
+		let attrs = try!(xcb::get_window_attributes(self, window).get_reply());
+		try!(xcb::change_window_attributes_checked(self, window, &[
+			(xcb::CW_EVENT_MASK, (attrs.all_event_masks() | attrs.do_not_propagate_mask() as u32) &
+				(xcb::EVENT_MASK_KEY_PRESS | xcb::EVENT_MASK_KEY_RELEASE) |
+				(xcb::EVENT_MASK_POINTER_MOTION | xcb::EVENT_MASK_SUBSTRUCTURE_NOTIFY))]).request_check());
 
-			// Listen to key press and release only if the window is not already listening for them, so we do not
-			// steal their keys.
-			//
-			// Listen for pointer motion events and window changes.
-			try!(xlib::XSelectInput(self.id, window, (attrs.all_event_masks | attrs.do_not_propagate_mask) &
-				(xlib::KeyPressMask | xlib::KeyReleaseMask) |
-				(xlib::PointerMotionMask | xlib::SubstructureNotifyMask)));
-
-			if !children.is_null() && count > 0 {
-				for i in 0 .. count {
-					self.observe(*children.offset(i as isize));
-				}
-
-				xlib::XFree(children as *mut _);
-			}
+		for &child in query.children() {
+			self.observe(child);
 		}
 	}
 }
 
-impl Drop for Display {
-	fn drop(&mut self) {
-		unsafe {
-			xlib::XCloseDisplay(self.id);
-		}
+impl Deref for Display {
+	type Target = Arc<platform::Display>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.display
 	}
 }

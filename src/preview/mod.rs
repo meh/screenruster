@@ -18,8 +18,5 @@
 mod preview;
 pub use self::preview::{Preview, Request, Response};
 
-mod display;
-pub use self::display::Display;
-
 mod window;
 pub use self::window::Window;
