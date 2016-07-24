@@ -29,7 +29,6 @@ pub struct Keyboard {
 	device:    i32,
 	keymap:    xkb::Keymap,
 	state:     xkb::State,
-	mods:      u8,
 	extension: xcb::QueryExtensionData,
 }
 
@@ -92,7 +91,6 @@ impl Keyboard {
 			device:    device,
 			keymap:    keymap,
 			state:     state,
-			mods:      0,
 			extension: extension,
 		})
 	}
