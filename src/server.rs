@@ -26,6 +26,15 @@ use dbus;
 use error;
 use config;
 
+/// The DBus server.
+///
+/// It mimics the GNOME screensaver interface for simple integration with a
+/// GNOME environment, and also implements some ScreenRuster specific
+/// interfaces.
+///
+/// It listens for relevant system events:
+///
+/// - `PrepareForSleep` from SystemD
 pub struct Server {
 	receiver: Receiver<Request>,
 	sender:   Sender<Response>,
