@@ -31,7 +31,7 @@ pub enum Response {
 impl Preview {
 	pub fn spawn<T: AsRef<str>>(name: T, config: Config) -> error::Result<Preview> {
 		let     display  = Display::open(None)?;
-		let mut keyboard = Keyboard::new(&display)?;
+		let mut keyboard = Keyboard::new(display.clone())?;
 		let     window   = Window::create(display.clone())?;
 		let mut saver    = Saver::spawn(name.as_ref())?;
 		let mut throttle = config.saver().throttle();
@@ -92,9 +92,9 @@ impl Preview {
 						let event = event.unwrap();
 
 						match event.response_type() {
-							// Update keyboard state.
-							e if e == keyboard.first_event() + xcb::xkb::STATE_NOTIFY => {
-								keyboard.update(xcb::cast_event(&event));
+							// Handle keyboard events.
+							e if e >= keyboard.first_event() && e < keyboard.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY => {
+								keyboard.handle(&event)
 							}
 
 							// Handle keyboard input.

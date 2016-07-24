@@ -67,7 +67,7 @@ pub enum Response {
 impl Locker {
 	pub fn spawn(config: Config) -> error::Result<Locker> {
 		let     display  = Display::open(config.locker())?;
-		let mut keyboard = Keyboard::new(&display)?;
+		let mut keyboard = Keyboard::new((*display).clone())?;
 		let mut windows  = HashMap::new(): HashMap<u32, Window>;
 		let mut savers   = HashMap::new(): HashMap<u32, Saver>;
 		let mut checking = false;
@@ -253,9 +253,9 @@ impl Locker {
 								}
 							}
 
-							// Update keyboard state.
-							e if e == keyboard.first_event() + xcb::xkb::STATE_NOTIFY => {
-								keyboard.update(xcb::cast_event(&event));
+							// Handle keyboard events.
+							e if e >= keyboard.first_event() && e < keyboard.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY => {
+								keyboard.handle(&event)
 							}
 
 							// Handle keyboard input.
