@@ -44,8 +44,8 @@ struct Info {
 
 impl Authenticate for Auth {
 	fn authenticate(&mut self, user: &str, password: &str) -> error::Result<bool> {
-		let user     = CString::new(user).unwrap();
-		let password = CString::new(password).unwrap();
+		let user     = CString::new(user)?;
+		let password = CString::new(password)?;
 
 		unsafe {
 			let mut handle = mem::uninitialized();

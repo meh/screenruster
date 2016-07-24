@@ -18,6 +18,7 @@
 use std::fmt;
 use std::error;
 use std::io;
+use std::ffi;
 
 use xcb;
 use dbus;
@@ -29,6 +30,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 pub enum Error {
 	Io(io::Error),
 	Message(String),
+	Nul(ffi::NulError),
 	Unknown,
 	Parse,
 
@@ -88,6 +90,12 @@ pub mod auth {
 impl From<io::Error> for Error {
 	fn from(value: io::Error) -> Self {
 		Error::Io(value)
+	}
+}
+
+impl From<ffi::NulError> for Error {
+	fn from(value: ffi::NulError) -> Self {
+		Error::Nul(value)
 	}
 }
 
@@ -175,6 +183,9 @@ impl error::Error for Error {
 	fn description(&self) -> &str {
 		match *self {
 			Error::Io(ref err) =>
+				err.description(),
+
+			Error::Nul(ref err) =>
 				err.description(),
 
 			Error::Message(ref msg) =>
