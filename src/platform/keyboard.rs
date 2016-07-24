@@ -83,12 +83,6 @@ impl Keyboard {
 		let device  = xkb::x11::get_core_keyboard_device_id(&display);
 		let keymap  = xkb::x11::keymap_new_from_device(&context, &display, device, xkb::KEYMAP_COMPILE_NO_FLAGS);
 		let state   = xkb::x11::state_new_from_device(&keymap, &display, device);
-		let mask    = xcb::xkb::EVENT_TYPE_MAP_NOTIFY
-			| xcb::xkb::EVENT_TYPE_STATE_NOTIFY
-			| xcb::xkb::EVENT_TYPE_NEW_KEYBOARD_NOTIFY;
-
-		xcb::xkb::select_events_checked(&display, device as u16,
-			mask as u16, 0, mask as u16, 0, 0, None).request_check()?;
 
 		Ok(Keyboard {
 			display:   display,
