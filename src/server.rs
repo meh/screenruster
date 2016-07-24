@@ -94,27 +94,45 @@ pub enum Request {
 
 #[derive(Debug)]
 pub enum Response {
+	/// Whether the reload was successful or not.
 	Reload(bool),
 
+	/// The cookie for the inhibition.
 	Inhibit(u32),
+
+	/// The cookie for the throttle.
 	Throttle(u32),
+
+	/// The cookie for the suspend.
 	Suspend(u32),
 
+	/// Whether the screen is active or not.
 	Active(bool),
+	
+	/// How many seconds the saver has been active.
 	ActiveTime(u64),
 
+	/// Whether the session is idle or not.
 	SessionIdle(bool),
+
+	/// How many seconds the session has been idle.
 	SessionIdleTime(u64),
 }
 
 #[derive(Debug)]
 pub enum Signal {
+	/// The saver has been activated or deactivated.
 	Active(bool),
+
+	/// The session has become idle or active.
 	SessionIdle(bool),
+
+	/// An authentication request was initiated or completed.
 	AuthenticationRequest(bool),
 }
 
 impl Server {
+	/// Spawn a DBus server with the given configuration.
 	pub fn spawn(config: config::Server) -> error::Result<Server> {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
@@ -152,15 +170,9 @@ impl Server {
 			let sender                 = sender.clone();
 			let (g_sender, g_receiver) = channel::<error::Result<()>>();
 
-			macro_rules! ok {
-				() => (
-					g_sender.send(Ok(())).unwrap();
-				);
-			}
-
-			macro_rules! try {
-				($body:expr) => (
-					match $body {
+			macro_rules! dbus {
+				(connect) => (
+					match dbus::Connection::get_private(dbus::BusType::Session) {
 						Ok(value) => {
 							value
 						}
@@ -189,21 +201,23 @@ impl Server {
 						}
 					}
 				);
-			}
 
-			macro_rules! catch {
-				() => (
+				(ready) => (
+					g_sender.send(Ok(())).unwrap();
+				);
+
+				(check) => (
 					g_receiver.recv().unwrap()
 				)
 			}
 
 			thread::spawn(move || {
-				let c = try!(dbus::Connection::get_private(dbus::BusType::Session));
+				let c = dbus!(connect);
 				let f = dbus::tree::Factory::new_fn();
 
-				try!(register c, "org.gnome.ScreenSaver");
-				try!(register c, "meh.rust.ScreenSaver");
-				ok!();
+				dbus!(register c, "org.gnome.ScreenSaver");
+				dbus!(register c, "meh.rust.ScreenSaver");
+				dbus!(ready);
 
 				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
 				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
@@ -449,7 +463,7 @@ impl Server {
 				}
 			});
 
-			catch!()?;
+			dbus!(check)?;
 		}
 
 		Ok(Server {
