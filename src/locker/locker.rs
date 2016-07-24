@@ -33,14 +33,6 @@ use saver::{self, Saver, Password, Pointer};
 use super::{Display, Window};
 use platform::Keyboard;
 
-/// The actual locker.
-///
-/// Deals with ugly X11 shit and handles savers.
-///
-/// TODO(meh): Add a timeout to stopping a saver, if it takes too long it may
-///            be stuck or trying to ruse us.
-///
-/// TODO(meh): Consider timeouts for other saver commands.
 pub struct Locker {
 	receiver: Receiver<Response>,
 	sender:   Sender<Request>,
