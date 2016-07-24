@@ -23,6 +23,10 @@ use xkbcommon::xkb;
 use error;
 use super::Display;
 
+/// Keyboard manager and handler.
+///
+/// Its job is to map X key events to proper symbols/strings based on the
+/// layout and mappings.
 pub struct Keyboard {
 	display:   Arc<Display>,
 	context:   xkb::Context,
@@ -36,6 +40,7 @@ unsafe impl Send for Keyboard { }
 unsafe impl Sync for Keyboard { }
 
 impl Keyboard {
+	/// Create a keyboard for the given display.
 	pub fn new(display: Arc<Display>) -> error::Result<Keyboard> {
 		let extension = display.get_extension_data(xcb::xkb::id())
 			.ok_or(error::X::MissingExtension)?;
@@ -95,11 +100,13 @@ impl Keyboard {
 		})
 	}
 
+	/// Checks if an event belongs to the keyboard.
 	pub fn owns_event(&self, event: u8) -> bool {
 		event >= self.extension.first_event() &&
 		event < self.extension.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY
 	}
 
+	/// Handles an X event.
 	pub fn handle(&mut self, event: &xcb::GenericEvent) {
 		match event.response_type() - self.extension.first_event() {
 			xcb::xkb::NEW_KEYBOARD_NOTIFY | xcb::xkb::MAP_NOTIFY => {
@@ -123,10 +130,12 @@ impl Keyboard {
 		}
 	}
 
+	/// Translates the key code to the key symbol.
 	pub fn symbol(&self, code: xkb::Keycode) -> xkb::Keysym {
 		self.state.key_get_one_sym(code)
 	}
 
+	/// Translates a key code to an UTF-8 string.
 	pub fn string(&self, code: xkb::Keycode) -> String {
 		self.state.key_get_utf8(code)
 	}
