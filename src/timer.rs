@@ -85,13 +85,17 @@ pub enum Event {
 #[derive(Clone, Debug)]
 pub enum Response {
 	Report {
-		id:        u64,
-		beat:      Instant,
-		idle:      Instant,
-		started:   Option<Instant>,
-		locked:    Option<Instant>,
-		blanked:   Option<Instant>,
-		unblanked: Option<Instant>,
+		id:         u64,
+		beat:       Instant,
+		idle:       Instant,
+		started:    Option<Instant>,
+		locked:     Option<Instant>,
+		blanked:    Option<Instant>,
+		unblanked:  Option<Instant>,
+		suspended:  Option<SystemTime>,
+		correction: u64,
+		corrected:  bool,
+		timeouts:   HashMap<u64, (Instant, u64)>,
 	},
 
 	Timeout {
@@ -151,13 +155,17 @@ impl Timer {
 					match request {
 						Request::Report { id } => {
 							sender.send(Response::Report {
-								id:        id,
-								beat:      beat,
-								idle:      idle,
-								started:   started,
-								locked:    locked,
-								blanked:   blanked,
-								unblanked: unblanked,
+								id:         id,
+								beat:       beat,
+								idle:       idle,
+								started:    started,
+								locked:     locked,
+								blanked:    blanked,
+								unblanked:  unblanked,
+								suspended:  suspended,
+								correction: correction,
+								corrected:  corrected,
+								timeouts:   timeouts.clone(),
 							}).unwrap();
 						}
 
