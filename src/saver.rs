@@ -40,6 +40,13 @@ macro_rules! json {
 
 use error;
 
+/// Interaction with an external process that implements the ScreenRuster IPC.
+///
+/// It takes care of spawning the process and communicating with it, exposing a
+/// simple to use API.
+///
+/// When the process dies it sends a message signaling the death, otherwise it
+/// just forwards requests and responses.
 pub struct Saver {
 	process:  Arc<Mutex<Child>>,
 	receiver: Option<Receiver<Response>>,
@@ -85,7 +92,8 @@ impl Saver {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 
-		// Reader.
+		// Read from the process stdout, decode the responses from JSON and send
+		// them through the channel.
 		{
 			let input    = child.lock().unwrap().stdout.take().unwrap();
 			let child    = child.clone();
@@ -127,7 +135,8 @@ impl Saver {
 			});
 		}
 
-		// Writer.
+		// Receive requests from the channel, encode them to JSON and send them to
+		// the process stdin.
 		{
 			let mut output = child.lock().unwrap().stdin.take().unwrap();
 
@@ -218,7 +227,7 @@ impl Saver {
 			});
 		}
 
-		// Logger.
+		// Read from the process stderr and forward it to stderr.
 		{
 			let input = child.lock().unwrap().stderr.take().unwrap();
 
