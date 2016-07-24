@@ -28,6 +28,7 @@ use xkbcommon::xkb::keysyms as key;
 use error;
 use config::Config;
 use api;
+use timer;
 use saver::{self, Saver, Password, Pointer};
 use super::{Display, Window};
 use platform::Keyboard;
@@ -48,6 +49,7 @@ pub struct Locker {
 #[derive(Clone)]
 pub enum Request {
 	Sanitize,
+	Timeout { id: u64 },
 	Activity,
 	Power(bool),
 	Throttle(bool),
@@ -60,6 +62,7 @@ pub enum Request {
 
 #[derive(Clone)]
 pub enum Response {
+	Timeout(timer::Timeout),
 	Activity,
 	Password(String),
 }
@@ -104,6 +107,10 @@ impl Locker {
 					// Handle control events.
 					event = receiver.recv() => {
 						match event.unwrap() {
+							Request::Timeout { id } => {
+								saver!(id as u32).kill();
+							}
+
 							Request::Sanitize => {
 								display.sanitize();
 
@@ -140,7 +147,13 @@ impl Locker {
 										let name = &config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
 										if let Ok(mut saver) = Saver::spawn(&name) {
-											let id       = window.id();
+											let id = window.id();
+
+											sender.send(Response::Timeout(timer::Timeout::Set {
+												id:      id as u64,
+												seconds: config.saver().timeout() as u64,
+											})).unwrap();
+
 											let receiver = saver.take().unwrap();
 											let sender   = s_sender.clone();
 
@@ -170,8 +183,6 @@ impl Locker {
 							}
 
 							Request::Lock => {
-								password = String::new();
-
 								for saver in savers.values_mut() {
 									saver.lock().unwrap();
 								}
@@ -186,8 +197,13 @@ impl Locker {
 							}
 
 							Request::Stop => {
-								for window in windows.values_mut() {
-									if let Some(saver) = savers.get_mut(&window.id()) {
+								for (&id, window) in &mut windows {
+									if let Some(saver) = savers.get_mut(&id) {
+										sender.send(Response::Timeout(timer::Timeout::Set {
+											id:      id as u64,
+											seconds: config.saver().timeout() as u64,
+										})).unwrap();
+
 										saver.stop().unwrap();
 									}
 									else {
@@ -209,6 +225,8 @@ impl Locker {
 
 							saver::Response::Forward(api::Response::Started) => {
 								if saver!(id).was_started() {
+									sender.send(Response::Timeout(timer::Timeout::Cancel { id: id as u64 })).unwrap();
+
 									// FIXME(meh): Do not crash on grab failure.
 									window!(id).lock().unwrap();
 								}
@@ -220,6 +238,9 @@ impl Locker {
 							saver::Response::Forward(api::Response::Stopped) => {
 								if !saver!(id).was_stopped() {
 									saver!(id).kill();
+								}
+								else {
+									sender.send(Response::Timeout(timer::Timeout::Cancel { id: id as u64 })).unwrap();
 								}
 							}
 
@@ -297,13 +318,13 @@ impl Locker {
 
 										// Check authentication.
 										key::KEY_Return => {
-											checking = true;
-
 											for saver in savers.values_mut() {
 												saver.password(Password::Check).unwrap();
 											}
 
 											sender.send(Response::Password(password)).unwrap();
+
+											checking = true;
 											password = String::new();
 										}
 
@@ -383,6 +404,10 @@ impl Locker {
 
 	pub fn sanitize(&self) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Sanitize)
+	}
+
+	pub fn timeout(&self, id: u64) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Timeout { id: id })
 	}
 
 	pub fn start(&self) -> Result<(), SendError<Request>> {

@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::ops::Deref;
 use std::sync::mpsc::{Receiver, Sender, SendError, channel};
@@ -30,13 +31,16 @@ pub struct Timer {
 
 #[derive(Clone, Debug)]
 pub enum Request {
-	/// Reset the specific event.
-	Reset(Event),
-
-	/// Requests a report on all the timers.
+	/// Request a report on all the timers.
 	Report {
 		id: u64,
 	},
+
+	/// Request a timeout.
+	Timeout(Timeout),
+
+	/// Reset the specific event.
+	Reset(Event),
 
 	/// Suspend the timers.
 	Suspend(SystemTime),
@@ -60,6 +64,18 @@ pub enum Request {
 	Stopped,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum Timeout {
+	Set {
+		id:      u64,
+		seconds: u64,
+	},
+
+	Cancel {
+		id: u64,
+	}
+}
+
 #[derive(Clone, Debug)]
 pub enum Event {
 	Idle,
@@ -76,6 +92,10 @@ pub enum Response {
 		locked:    Option<Instant>,
 		blanked:   Option<Instant>,
 		unblanked: Option<Instant>,
+	},
+
+	Timeout {
+		id: u64
 	},
 
 	Suspended(SystemTime),
@@ -121,21 +141,14 @@ impl Timer {
 			// Whether a correction loop has already been done.
 			let mut corrected = false;
 
+			// The registered timeouts.
+			let mut timeouts = HashMap::new(): HashMap<u64, (Instant, u64)>;
+
 			loop {
 				thread::sleep(Duration::from_secs(1));
 
 				while let Ok(request) = receiver.try_recv() {
 					match request {
-						Request::Reset(Event::Idle) => {
-							idle       = Instant::now();
-							correction = 0;
-						}
-
-						Request::Reset(Event::Blank) | Request::Unblanked => {
-							blanked   = None;
-							unblanked = Some(Instant::now());
-						}
-
 						Request::Report { id } => {
 							sender.send(Response::Report {
 								id:        id,
@@ -146,6 +159,24 @@ impl Timer {
 								blanked:   blanked,
 								unblanked: unblanked,
 							}).unwrap();
+						}
+
+						Request::Timeout(Timeout::Set { id, seconds }) => {
+							timeouts.insert(id, (Instant::now(), seconds));
+						}
+
+						Request::Timeout(Timeout::Cancel { id }) => {
+							timeouts.remove(&id);
+						}
+
+						Request::Reset(Event::Idle) => {
+							idle       = Instant::now();
+							correction = 0;
+						}
+
+						Request::Reset(Event::Blank) | Request::Unblanked => {
+							blanked   = None;
+							unblanked = Some(Instant::now());
 						}
 
 						Request::Suspend(time) => {
@@ -177,6 +208,22 @@ impl Timer {
 							blanked    = None;
 							correction = 0;
 						}
+					}
+				}
+
+				// Handle registered timeouts.
+				{
+					let mut expired = HashSet::new();
+
+					for (&id, &(ref started, seconds)) in &timeouts {
+						if started.elapsed().as_secs() > seconds {
+							expired.insert(id);
+						}
+					}
+
+					for id in expired {
+						sender.send(Response::Timeout { id: id }).unwrap();
+						timeouts.remove(&id);
 					}
 				}
 
@@ -228,14 +275,18 @@ impl Timer {
 		})
 	}
 
-	/// Reset the given timer.
-	pub fn reset(&self, event: Event) -> Result<(), SendError<Request>> {
-		self.sender.send(Request::Reset(event))
+	pub fn timeout(&self, value: Timeout) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Timeout(value))
 	}
 
 	/// Request a report wiht the given id.
 	pub fn report(&self, id: u64) -> Result<(), SendError<Request>> {
 		self.sender.send(Request::Report { id: id })
+	}
+
+	/// Reset the given timer.
+	pub fn reset(&self, event: Event) -> Result<(), SendError<Request>> {
+		self.sender.send(Request::Reset(event))
 	}
 
 	/// Request the timers to suspend at the given time.

@@ -475,9 +475,9 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			// Locker events.
 			event = l.recv() => {
 				match event.unwrap() {
-					// Try authorization.
-					locker::Response::Password(pwd) => {
-						act!(auth < pwd);
+					// Register timeout.
+					locker::Response::Timeout(what) => {
+						timer.timeout(what).unwrap();
 					}
 
 					// On system activity.
@@ -503,6 +503,11 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 						else {
 							timer.reset(timer::Event::Idle).unwrap();
 						}
+					}
+
+					// Try authorization.
+					locker::Response::Password(pwd) => {
+						act!(auth < pwd);
 					}
 				}
 			},
@@ -673,6 +678,10 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 
 					timer::Response::Report { .. } => {
 						unreachable!();
+					}
+
+					timer::Response::Timeout { id } => {
+						locker.timeout(id).unwrap();
 					}
 
 					timer::Response::Suspended(time) => {

@@ -45,6 +45,9 @@ blank = false
 
 # General screen saver settings.
 [saver]
+# How many seconds before an unresponsive saver is killed.
+timeout = 5
+
 # A list of screen savers to use.
 use = ["laughing_man"]
 
