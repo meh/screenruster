@@ -27,34 +27,6 @@ use libc::{calloc, free, strdup};
 use error;
 use super::Authenticate;
 
-macro_rules! pam {
-	($handle:ident) => (
-		pam::end($handle, pam::PamReturnCode::SUCCESS);
-	);
-
-	($handle:ident, $body:expr) => (
-		match $body {
-			pam::PamReturnCode::SUCCESS =>
-				Ok(()),
-
-			error => {
-				pam::end($handle, error);
-				Err(error::auth::Pam(error))
-			}
-		}
-	);
-
-	($body:expr) => (
-		match $body {
-			pam::PamReturnCode::SUCCESS =>
-				Ok(()),
-
-			error =>
-				Err(error::auth::Pam(error))
-		}
-	);
-}
-
 pub struct Auth {
 	accounts: bool,
 }
@@ -82,21 +54,69 @@ impl Authenticate for Auth {
 				data_ptr: &Info { user: user.as_ptr(), password: password.as_ptr() } as *const _ as *mut _,
 			};
 
-			pam!(pam::start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, &mut handle))?;
-			pam!(handle, pam::set_item(handle, pam::PamItemType::TTY, strdup(b":0.0\x00".as_ptr() as *const _) as *mut _))?;
-			pam!(handle, pam::authenticate(handle, pam::PamFlag::NONE))?;
+			macro_rules! pam {
+				(check $body:expr) => (
+					match $body {
+						pam::PamReturnCode::SUCCESS =>
+							Ok(()),
+
+						error =>
+							Err(error::auth::Pam(error))
+					}
+				);
+
+				(checked $body:expr) => (
+					match $body {
+						pam::PamReturnCode::SUCCESS =>
+							Ok(()),
+
+						error => {
+							pam::end(handle, error);
+							Err(error::auth::Pam(error))
+						}
+					}
+				);
+
+				(start) => (
+					pam!(check pam::start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, &mut handle))
+				);
+
+				(set_item $ty:ident => $value:expr) => (
+					pam!(checked pam::set_item(handle, pam::PamItemType::$ty, strdup($value.as_ptr() as *const _) as *mut _))
+				);
+
+				(authenticate) => (
+					pam!(checked pam::authenticate(handle, pam::PamFlag::NONE))
+				);
+
+				(end) => (
+					pam::end(handle, pam::PamReturnCode::SUCCESS);
+				);
+
+				($name:ident $flag:ident) => (
+					pam!(checked pam::$name(handle, pam::PamFlag::$flag))
+				);
+
+				($name:ident) => (
+					pam!($name NONE)
+				);
+			}
+
+			pam!(start)?;
+			pam!(set_item TTY => b":0.0\0")?;
+			pam!(authenticate)?;
 
 			// On some systems account management is not configured properly, but
 			// some PAM modules require it to be called to work properly, so make the
 			// erroring optional.
 			if self.accounts {
-				pam!(handle, pam::acct_mgmt(handle, pam::PamFlag::NONE))?;
-				pam!(handle, pam::setcred(handle, pam::PamFlag::REINITIALIZE_CRED))?;
-				pam!(handle);
+				pam!(acct_mgmt)?;
+				pam!(setcred REINITIALIZE_CRED)?;
+				pam!(end);
 			}
 			else {
-				if pam!(handle, pam::acct_mgmt(handle, pam::PamFlag::NONE)).is_ok() {
-					pam!(handle);
+				if pam!(acct_mgmt).is_ok() {
+					pam!(end);
 				}
 			}
 
