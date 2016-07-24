@@ -142,6 +142,14 @@ impl Window {
 		Ok(())
 	}
 
+	/// Notify the window the power status changed.
+	pub fn power(&mut self, value: bool) {
+		if !value {
+			xcb::change_window_attributes(&self.display, self.id(), &[
+				(xcb::CW_BACK_PIXEL, self.black())]);
+		}
+	}
+
 	/// Make the window solid black.
 	pub fn blank(&mut self) {
 		let (width, height) = self.dimensions();

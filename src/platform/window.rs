@@ -30,6 +30,7 @@ pub struct Window {
 	id:     u32,
 	screen: i32,
 	root:   u32,
+	black:  u32,
 	cursor: xcb::Cursor,
 }
 
@@ -54,10 +55,10 @@ impl Window {
 		xcb::create_window(&display, xcb::COPY_FROM_PARENT as u8, id, screen.root(),
 			0, 0, width as u16, height as u16,
 			0, xcb::WINDOW_CLASS_INPUT_OUTPUT as u16, screen.root_visual(), &[
-				(xcb::CW_BACK_PIXEL, screen.black_pixel()),
+				(xcb::CW_CURSOR, cursor),
+				(xcb::CW_BORDER_PIXEL, screen.black_pixel()),
 				(xcb::CW_BACKING_PIXEL, screen.black_pixel()),
 				(xcb::CW_BACKING_STORE, xcb::BACKING_STORE_NOT_USEFUL),
-				(xcb::CW_CURSOR, cursor),
 				(xcb::CW_EVENT_MASK,
 					xcb::EVENT_MASK_KEY_PRESS |
 					xcb::EVENT_MASK_KEY_RELEASE |
@@ -74,24 +75,34 @@ impl Window {
 			id:     id,
 			screen: index,
 			root:   screen.root(),
+			black:  screen.black_pixel(),
 			cursor: cursor,
 		})
 	}
 
+	/// Flush the request queue.
 	pub fn flush(&self) {
 		self.display.flush();
 	}
 
+	/// Get the id.
 	pub fn id(&self) -> u32 {
 		self.id
 	}
 
+	/// Get the screen.
 	pub fn screen(&self) -> i32 {
 		self.screen
 	}
 
+	/// Get the screen root.
 	pub fn root(&self) -> u32 {
 		self.root
+	}
+
+	/// Get the black pixel.
+	pub fn black(&self) -> u32 {
+		self.black
 	}
 
 	/// Resize the window.
@@ -103,6 +114,7 @@ impl Window {
 		self.flush();
 	}
 
+	/// Get the dimensions.
 	pub fn dimensions(&self) -> (u32, u32) {
 		if let Ok(reply) = xcb::get_geometry(&self.display, self.id()).get_reply() {
 			(reply.width() as u32, reply.height() as u32)
