@@ -447,7 +447,7 @@ impl Server {
 
 				tree.set_registered(&c, true).unwrap();
 
-				for item in tree.run(&c, c.iter(100)) {
+				for item in tree.run(&c, c.iter(500)) {
 					if let dbus::ConnectionItem::Nothing = item {
 						while let Ok(signal) = signals.try_recv() {
 							c.send(match signal {
