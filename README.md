@@ -100,9 +100,8 @@ Theoretically `ScreenRuster` should be safer than `xscreensaver` because it's
 written in Rust and the architecture is slightly different from the one from
 `xscreensaver` further reducing the attack surface.
 
-Practically `ScreenRuster` is still young and there's a lot of unsafe code
-around the usage of `Xlib` and `PAM` which makes it not that much safer than
-`xscreensaver` from that point of view.
+Practically `ScreenRuster` is still young and there's some unsafe code around
+the usage of `PAM` (_but it's small enough to be safe_).
 
 Why should I use this instead of `gnome-screensaver`?
 -----------------------------------------------------
