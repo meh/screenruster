@@ -24,6 +24,12 @@ use std::time::{Instant, SystemTime, Duration};
 use error;
 use config;
 
+/// The timer manager.
+///
+/// It manages timers with a 1 second granularity, reporting timer expirations
+/// through a channel.
+///
+/// It also handles custom timeouts on request.
 pub struct Timer {
 	receiver: Receiver<Response>,
 	sender:   Sender<Request>,
@@ -66,11 +72,13 @@ pub enum Request {
 
 #[derive(Copy, Clone, Debug)]
 pub enum Timeout {
+	/// Set a timeout.
 	Set {
 		id:      u64,
 		seconds: u64,
 	},
 
+	/// Cancel a timeout.
 	Cancel {
 		id: u64,
 	}
@@ -78,12 +86,16 @@ pub enum Timeout {
 
 #[derive(Clone, Debug)]
 pub enum Event {
+	/// Deal with idle events.
 	Idle,
+
+	/// Deal with blanking events.
 	Blank,
 }
 
 #[derive(Clone, Debug)]
 pub enum Response {
+	/// Report various information about the timer internal status.
 	Report {
 		id:         u64,
 		beat:       Instant,
@@ -98,21 +110,32 @@ pub enum Response {
 		timeouts:   HashMap<u64, (Instant, u64)>,
 	},
 
+	/// A custom timeout has expired.
 	Timeout {
 		id: u64
 	},
 
+	/// The timers were suspended.
 	Suspended(SystemTime),
+
+	/// The timers were resumed.
 	Resumed,
 
+	/// Hurts my kokoro.
 	Heartbeat,
 
+	/// The system has been idle long enough.
 	Start,
+
+	/// The system has been idle long enough after starting.
 	Lock,
+
+	/// The system has been idle long enough to blank.
 	Blank,
 }
 
 impl Timer {
+	/// Spawn the timer thread with the given configuration.
 	pub fn spawn(config: config::Timer) -> error::Result<Timer> {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
@@ -219,7 +242,7 @@ impl Timer {
 					}
 				}
 
-				// Handle registered timeouts.
+				// Handle custom timeouts.
 				{
 					let mut expired = HashSet::new();
 
@@ -229,7 +252,7 @@ impl Timer {
 						}
 					}
 
-					for id in expired {
+					for &id in &expired {
 						sender.send(Response::Timeout { id: id }).unwrap();
 						timeouts.remove(&id);
 					}
