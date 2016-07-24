@@ -95,8 +95,9 @@ impl Keyboard {
 		})
 	}
 
-	pub fn first_event(&self) -> u8 {
-		self.extension.first_event()
+	pub fn owns_event(&self, event: u8) -> bool {
+		event >= self.extension.first_event() &&
+		event < self.extension.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY
 	}
 
 	pub fn handle(&mut self, event: &xcb::GenericEvent) {

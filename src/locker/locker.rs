@@ -279,8 +279,8 @@ impl Locker {
 							}
 
 							// Handle keyboard events.
-							e if e >= keyboard.first_event() && e < keyboard.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY => {
-								keyboard.handle(&event)
+							e if keyboard.owns_event(e) => {
+								keyboard.handle(&event);
 							}
 
 							// Handle keyboard input.
