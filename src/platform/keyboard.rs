@@ -124,12 +124,12 @@ impl Keyboard {
 		}
 	}
 
-	/// Translates the key code to the key symbol.
+	/// Translate a key code to the key symbol.
 	pub fn symbol(&self, code: xkb::Keycode) -> xkb::Keysym {
 		self.state.key_get_one_sym(code)
 	}
 
-	/// Translates a key code to an UTF-8 string.
+	/// Translate a key code to an UTF-8 string.
 	pub fn string(&self, code: xkb::Keycode) -> String {
 		self.state.key_get_utf8(code)
 	}
