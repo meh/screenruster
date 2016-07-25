@@ -45,7 +45,7 @@ impl Keyboard {
 		let extension = display.get_extension_data(xcb::xkb::id())
 			.ok_or(error::X::MissingExtension)?;
 
-		// Check extension support.
+		// Check the XKB extension version.
 		{
 			let cookie = xcb::xkb::use_extension(&display,
 				xkb::x11::MIN_MAJOR_XKB_VERSION,
@@ -76,7 +76,7 @@ impl Keyboard {
 			xcb::xkb::select_events_checked(&display,
 				xcb::xkb::ID_USE_CORE_KBD as u16,
 				events as u16, 0, events as u16,
-				map as u16, map as u16, None).request_check()?
+				map as u16, map as u16, None).request_check()?;
 		}
 
 		let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
