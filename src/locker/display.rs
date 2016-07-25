@@ -161,6 +161,8 @@ impl Display {
 			}
 		}
 
+		// Start listening for activity events from the window making sure to not
+		// break it, by excluding various events.
 		let attrs = try!(xcb::get_window_attributes(self, window).get_reply());
 		try!(xcb::change_window_attributes_checked(self, window, &[
 			(xcb::CW_EVENT_MASK, (attrs.all_event_masks() | attrs.do_not_propagate_mask() as u32) &
