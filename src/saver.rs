@@ -27,17 +27,6 @@ use log;
 use api::{self, json};
 pub use api::{Password, Pointer};
 
-macro_rules! json {
-	($body:expr) => (
-		if let Some(value) = $body {
-			value
-		}
-		else {
-			continue;
-		}
-	);
-}
-
 use error;
 
 /// Interaction with an external process that implements the ScreenRuster IPC.
@@ -100,6 +89,17 @@ impl Saver {
 			let internal = i_sender.clone();
 
 			thread::spawn(move || {
+				macro_rules! json {
+					($body:expr) => (
+						if let Some(value) = $body {
+							value
+						}
+						else {
+							continue;
+						}
+					);
+				}
+
 				for line in BufReader::new(input).lines() {
 					if line.is_err() {
 						break;
