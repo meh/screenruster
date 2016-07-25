@@ -198,8 +198,8 @@ fn exit<T>(value: error::Result<T>) -> T {
 			Error::DBus(error::DBus::AlreadyRegistered) =>
 				error!(10, "Another screen saver is currently running."),
 
-			_ =>
-				error!(255, "Something happened :(")
+			ref err =>
+				error!(255, err),
 		}
 	}
 }
