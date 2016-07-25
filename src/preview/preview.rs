@@ -114,6 +114,11 @@ impl Preview {
 								keyboard.handle(&event);
 							}
 
+							xcb::CONFIGURE_NOTIFY => {
+								let event = xcb::cast_event(&event): &xcb::ConfigureNotifyEvent;
+								saver.resize(event.width() as u32, event.height() as u32).unwrap();
+							}
+
 							// Handle keyboard input.
 							xcb::KEY_PRESS => {
 								let key = xcb::cast_event(&event): &xcb::KeyPressEvent;

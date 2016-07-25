@@ -65,6 +65,7 @@ impl Window {
 					xcb::EVENT_MASK_BUTTON_PRESS |
 					xcb::EVENT_MASK_BUTTON_RELEASE |
 					xcb::EVENT_MASK_POINTER_MOTION |
+					xcb::EVENT_MASK_STRUCTURE_NOTIFY |
 					xcb::EVENT_MASK_EXPOSURE)]);
 
 		display.flush();
