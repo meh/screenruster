@@ -15,12 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Eq, PartialEq, Copy, Clone, Debug)]
-pub enum Grab {
-	Keyboard,
-	Pointer,
-}
-
 mod event;
 pub use self::event::Event;
 

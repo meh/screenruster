@@ -15,23 +15,32 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::thread;
 use std::sync::Arc;
+use std::time::Duration;
 use std::ops::Deref;
 
 use xcb;
 
 use error;
 use super::Display;
-use platform::{self, Grab};
+use platform;
 
 pub struct Window {
 	display: Arc<Display>,
 	window:  platform::Window,
 	gc:      u32,
+	cursor:  u32,
 
 	locked:   bool,
 	keyboard: bool,
 	pointer:  bool,
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum Grab {
+	Keyboard,
+	Pointer,
 }
 
 impl Window {
@@ -40,7 +49,19 @@ impl Window {
 		let window = platform::Window::create((**display).clone(), display.screen(),
 			screen.width_in_pixels() as u32, screen.height_in_pixels() as u32)?;
 
+		let cursor = {
+			let pixmap = display.generate_id();
+			xcb::create_pixmap(&display, 1, pixmap, screen.root(), 1, 1);
+
+			let cursor = display.generate_id();
+			xcb::create_cursor(&display, cursor, pixmap, pixmap, 0, 0, 0, 0, 0, 0, 1, 1);
+			xcb::free_pixmap(&display, pixmap);
+
+			cursor
+		};
+
 		xcb::change_window_attributes(&display, window.id(), &[
+			(xcb::CW_CURSOR, cursor),
 			(xcb::CW_OVERRIDE_REDIRECT, 1)]);
 
 		xcb::change_property(&display, xcb::PROP_MODE_REPLACE as u8, window.id(),
@@ -56,6 +77,7 @@ impl Window {
 			display: display.clone(),
 			window:  window,
 			gc:      gc,
+			cursor:  cursor,
 
 			locked:   false,
 			keyboard: false,
@@ -76,6 +98,58 @@ impl Window {
 			xcb::configure_window(&self.display, self.id(), &[
 				(xcb::CONFIG_WINDOW_STACK_MODE as u16, xcb::STACK_MODE_ABOVE)]);
 		}
+	}
+
+	/// Grab the given input.
+	pub fn grab(&self, grab: Grab) -> error::Result<()> {
+		let result = match grab {
+			Grab::Keyboard => {
+				xcb::grab_keyboard(&self.display, false, self.id(), xcb::CURRENT_TIME,
+					xcb::GRAB_MODE_ASYNC as u8, xcb::GRAB_MODE_ASYNC as u8
+				).get_reply()?.status()
+			}
+
+			Grab::Pointer => {
+				xcb::grab_pointer(&self.display, false, self.id(),
+					(xcb::EVENT_MASK_BUTTON_PRESS | xcb::EVENT_MASK_BUTTON_RELEASE | xcb::EVENT_MASK_POINTER_MOTION) as u16,
+					xcb::GRAB_MODE_ASYNC as u8, xcb::GRAB_MODE_ASYNC as u8, 0, self.cursor, xcb::CURRENT_TIME
+				).get_reply()?.status()
+			}
+		};
+
+		match result as u32 {
+			xcb::GRAB_STATUS_SUCCESS =>
+				Ok(()),
+
+			xcb::GRAB_STATUS_ALREADY_GRABBED =>
+				Err(error::Grab::Conflict.into()),
+
+			xcb::GRAB_STATUS_NOT_VIEWABLE =>
+				Err(error::Grab::Unmapped.into()),
+
+			xcb::GRAB_STATUS_FROZEN =>
+				Err(error::Grab::Frozen.into()),
+
+			_ =>
+				unreachable!()
+		}
+	}
+
+	/// Try to grab the given input with 1ms pauses.
+	pub fn try_grab(&self, grab: Grab, tries: usize) -> error::Result<()> {
+		let mut result = Ok(());
+
+		for _ in 0 .. tries {
+			result = self.grab(grab);
+
+			if result.is_ok() {
+				break;
+			}
+
+			thread::sleep(Duration::from_millis(1));
+		}
+
+		result
 	}
 
 	/// Lock the window.
