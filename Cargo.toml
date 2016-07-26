@@ -37,7 +37,7 @@ dbus  = "0.3"
 
 libc               = "0.2"
 xcb                = { version = "0.7", features = ["randr", "dpms", "xkb"] }
-xkbcommon          = { version = "0.2", features = ["x11"], git = "https://github.com/meh/xkbcommon-rs" }
+xkbcommon          = { version = "0.2", features = ["x11"] }
 screenruster-saver = { version = "0.1", default-features = false }
 
 [dependencies.pam-sys]
