@@ -37,6 +37,7 @@ extern crate pam_sys as pam;
 
 extern crate libc;
 extern crate xcb;
+extern crate xcb_util;
 extern crate xkbcommon;
 
 #[macro_use]

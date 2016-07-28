@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::ops::Deref;
 
 use xcb;
+use xcb_util::icccm;
 
 use error;
 use platform::{self, Display};
@@ -38,7 +39,10 @@ impl Window {
 		xcb::change_property(&display, xcb::PROP_MODE_REPLACE as u8, window.id(),
 			xcb::ATOM_WM_NAME, xcb::ATOM_STRING, 8, b"ScreenRuster");
 
-		// TODO: set size hints when that's added to xcb
+		icccm::set_wm_size_hints(&display, window.id(), xcb::ATOM_WM_NORMAL_HINTS, &icccm::SizeHints::empty()
+			.aspect((screen.width_in_pixels() as i32, screen.height_in_pixels() as i32),
+			        (screen.width_in_pixels() as i32, screen.height_in_pixels() as i32))
+			.build());
 
 		display.flush();
 
