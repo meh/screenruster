@@ -421,18 +421,21 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 
 		(blank) => (
 			blanked = Some(Instant::now());
+
 			locker.power(false).unwrap();
 			timer.blanked().unwrap();
 		);
 
 		(unblank) => (
 			blanked = None;
+
 			locker.power(true).unwrap();
 			timer.unblanked().unwrap();
 		);
 
 		(start) => (
 			started = Some(Instant::now());
+
 			locker.start().unwrap();
 			server.signal(server::Signal::Active(true)).unwrap();
 			timer.started().unwrap();
@@ -440,14 +443,19 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 
 		(lock) => (
 			locked = Some(Instant::now());
+
 			locker.lock().unwrap();
 			timer.locked().unwrap();
 		);
 
 		(stop) => (
+			locker.stop().unwrap();
+		);
+
+		(stopped) => (
 			started = None;
 			locked  = None;
-			locker.stop().unwrap();
+
 			server.signal(server::Signal::Active(false)).unwrap();
 			timer.stopped().unwrap();
 		);
@@ -512,6 +520,10 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 					// Try authorization.
 					locker::Response::Password(pwd) => {
 						act!(auth < pwd);
+					}
+
+					locker::Response::Stopped => {
+						act!(stopped);
 					}
 				}
 			},

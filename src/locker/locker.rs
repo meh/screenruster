@@ -57,6 +57,7 @@ pub enum Response {
 	Timeout(timer::Timeout),
 	Activity,
 	Password(String),
+	Stopped,
 }
 
 impl Locker {
@@ -239,6 +240,10 @@ impl Locker {
 							saver::Response::Exit(..) => {
 								if saver!(id).was_stopped() {
 									window!(id).unlock().unwrap();
+
+									if savers.len() == 1 {
+										sender.send(Response::Stopped).unwrap();
+									}
 								}
 								else {
 									window!(id).lock().unwrap();
