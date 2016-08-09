@@ -18,8 +18,8 @@
 mod locker;
 pub use self::locker::Locker;
 
-mod server;
-pub use self::server::Server;
+mod interface;
+pub use self::interface::Interface;
 
 mod timer;
 pub use self::timer::Timer;

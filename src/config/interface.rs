@@ -19,7 +19,7 @@ use std::sync::{Arc, RwLock};
 use std::collections::HashSet;
 
 #[derive(Clone, Default, Debug)]
-pub struct Server(pub(super) Arc<RwLock<Data>>);
+pub struct Interface(pub(super) Arc<RwLock<Data>>);
 
 #[derive(Debug)]
 pub(super) struct Data {
@@ -34,7 +34,7 @@ impl Default for Data {
 	}
 }
 
-impl Server {
+impl Interface {
 	pub fn ignores<T: AsRef<str>>(&self, name: T) -> bool {
 		self.0.read().unwrap().ignore.contains(name.as_ref())
 	}

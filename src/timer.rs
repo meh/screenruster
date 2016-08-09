@@ -122,7 +122,7 @@ pub enum Response {
 	Resumed,
 
 	/// Hurts my kokoro.
-	Heartbeat,
+	Heartbeat(Instant),
 
 	/// The system has been idle long enough.
 	Start,
@@ -261,7 +261,7 @@ impl Timer {
 				// If it's time to send a heart beat, send one and reset.
 				if beat.elapsed().as_secs() >= config.beat() as u64 {
 					beat = Instant::now();
-					sender.send(Response::Heartbeat).unwrap();
+					sender.send(Response::Heartbeat(idle)).unwrap();
 				}
 
 				// Do not check events if the timers are suspended.

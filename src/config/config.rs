@@ -24,14 +24,14 @@ use toml;
 use xdg;
 
 use error;
-use super::{Locker, Server, Timer, Auth, Saver, OnSuspend};
+use super::{Locker, Interface, Timer, Auth, Saver, OnSuspend};
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
 	path: Arc<RwLock<Option<PathBuf>>>,
 
 	locker: Locker,
-	server: Server,
+	interface: Interface,
 	timer:  Timer,
 	auth:   Auth,
 	saver:  Saver,
@@ -47,7 +47,7 @@ impl Config {
 
 	pub fn reset(&self) {
 		*self.locker.0.write().unwrap() = Default::default();
-		*self.server.0.write().unwrap() = Default::default();
+		*self.interface.0.write().unwrap() = Default::default();
 		*self.timer.0.write().unwrap()  = Default::default();
 		*self.auth.0.write().unwrap()   = Default::default();
 		*self.saver.0.write().unwrap()  = Default::default();
@@ -103,10 +103,10 @@ impl Config {
 			}
 		}
 
-		// Load `Server`.
-		if let Some(table) = table.get("server").and_then(|v| v.as_table()) {
+		// Load `Interface`.
+		if let Some(table) = table.get("interface").and_then(|v| v.as_table()) {
 			if let Some(array) = table.get("ignore").and_then(|v| v.as_slice()) {
-				self.server.0.write().unwrap().ignore = array.iter()
+				self.interface.0.write().unwrap().ignore = array.iter()
 					.filter(|v| v.as_str().is_some())
 					.map(|v| v.as_str().unwrap().to_string())
 					.collect();
@@ -164,8 +164,8 @@ impl Config {
 		self.timer.clone()
 	}
 
-	pub fn server(&self) -> Server {
-		self.server.clone()
+	pub fn interface(&self) -> Interface {
+		self.interface.clone()
 	}
 
 	pub fn locker(&self) -> Locker {

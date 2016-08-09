@@ -26,7 +26,7 @@ use dbus;
 use error;
 use config;
 
-/// The DBus server.
+/// The DBus interface.
 ///
 /// It mimics the GNOME screensaver interface for simple integration with a
 /// GNOME environment, and also implements some ScreenRuster specific
@@ -35,7 +35,7 @@ use config;
 /// It listens for relevant system events:
 ///
 /// - `PrepareForSleep` from SystemD
-pub struct Server {
+pub struct Interface {
 	receiver: Receiver<Request>,
 	sender:   Sender<Response>,
 	signals:  Sender<Signal>,
@@ -140,9 +140,9 @@ pub enum Signal {
 	AuthenticationRequest(bool),
 }
 
-impl Server {
-	/// Spawn a DBus server with the given configuration.
-	pub fn spawn(config: config::Server) -> error::Result<Server> {
+impl Interface {
+	/// Spawn a DBus interface with the given configuration.
+	pub fn spawn(config: config::Interface) -> error::Result<Interface> {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 		let (s_sender, signals)  = channel();
@@ -475,7 +475,7 @@ impl Server {
 			dbus!(check)?;
 		}
 
-		Ok(Server {
+		Ok(Interface {
 			receiver: i_receiver,
 			sender:   i_sender,
 			signals:  s_sender,
@@ -491,7 +491,7 @@ impl Server {
 	}
 }
 
-impl Deref for Server {
+impl Deref for Interface {
 	type Target = Receiver<Request>;
 
 	fn deref(&self) -> &Receiver<Request> {

@@ -60,8 +60,8 @@ use locker::Locker;
 mod auth;
 use auth::Auth;
 
-mod server;
-use server::Server;
+mod interface;
+use interface::Interface;
 
 mod timer;
 use timer::Timer;
@@ -383,11 +383,11 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 		}
 	}
 
-	let config = Config::load(matches.value_of("config"))?;
-	let timer  = Timer::spawn(config.timer())?;
-	let auth   = Auth::spawn(config.auth())?;
-	let server = Server::spawn(config.server())?;
-	let locker = Locker::spawn(config.clone())?;
+	let config    = Config::load(matches.value_of("config"))?;
+	let timer     = Timer::spawn(config.timer())?;
+	let auth      = Auth::spawn(config.auth())?;
+	let interface = Interface::spawn(config.interface())?;
+	let locker    = Locker::spawn(config.clone())?;
 
 	let mut locked    = None: Option<Instant>;
 	let mut started   = None: Option<Instant>;
@@ -437,7 +437,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			started = Some(Instant::now());
 
 			locker.start().unwrap();
-			server.signal(server::Signal::Active(true)).unwrap();
+			interface.signal(interface::Signal::Active(true)).unwrap();
 			timer.started().unwrap();
 		);
 
@@ -456,30 +456,30 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			started = None;
 			locked  = None;
 
-			server.signal(server::Signal::Active(false)).unwrap();
+			interface.signal(interface::Signal::Active(false)).unwrap();
 			timer.stopped().unwrap();
 		);
 
 		(auth < $value:expr) => (
-			server.signal(server::Signal::AuthenticationRequest(true)).unwrap();
+			interface.signal(interface::Signal::AuthenticationRequest(true)).unwrap();
 			auth.authenticate($value).unwrap();
 		);
 
 		(auth success) => (
 			locker.auth(true).unwrap();
-			server.signal(server::Signal::AuthenticationRequest(false)).unwrap();
+			interface.signal(interface::Signal::AuthenticationRequest(false)).unwrap();
 		);
 
 		(auth failure) => (
 			locker.auth(false).unwrap();
-			server.signal(server::Signal::AuthenticationRequest(false)).unwrap();
+			interface.signal(interface::Signal::AuthenticationRequest(false)).unwrap();
 		);
 	}
 
 	// XXX: select! is icky, this works around shadowing the outer name
 	let l = &*locker;
 	let a = &*auth;
-	let s = &*server;
+	let s = &*interface;
 	let t = &*timer;
 
 	loop {
@@ -549,13 +549,13 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			// DBus events.
 			event = s.recv() => {
 				match event.unwrap() {
-					server::Request::Reload(source) => {
+					interface::Request::Reload(source) => {
 						config.reset();
-						server.response(server::Response::Reload(
+						interface.response(interface::Response::Reload(
 							config.reload(source).is_ok())).unwrap();
 					}
 
-					server::Request::Lock => {
+					interface::Request::Lock => {
 						if started.is_none() {
 							act!(start);
 						}
@@ -566,31 +566,31 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 					}
 
 					// TODO: Implement cycling.
-					server::Request::Cycle => (),
+					interface::Request::Cycle => (),
 
-					server::Request::SimulateUserActivity => {
+					interface::Request::SimulateUserActivity => {
 						locker.activity().unwrap();
 					}
 
-					server::Request::Inhibit { .. } => {
-						server.response(server::Response::Inhibit(insert(&mut inhibitors))).unwrap();
+					interface::Request::Inhibit { .. } => {
+						interface.response(interface::Response::Inhibit(insert(&mut inhibitors))).unwrap();
 					}
 
-					server::Request::UnInhibit(cookie) => {
+					interface::Request::UnInhibit(cookie) => {
 						if inhibitors.contains(&cookie) {
 							inhibitors.remove(&cookie);
 						}
 					}
 
-					server::Request::Throttle { .. } => {
+					interface::Request::Throttle { .. } => {
 						if throttlers.is_empty() && !config.saver().throttle() {
 							locker.throttle(true).unwrap();
 						}
 
-						server.response(server::Response::Throttle(insert(&mut throttlers))).unwrap();
+						interface.response(interface::Response::Throttle(insert(&mut throttlers))).unwrap();
 					}
 
-					server::Request::UnThrottle(cookie) => {
+					interface::Request::UnThrottle(cookie) => {
 						if throttlers.contains(&cookie) {
 							throttlers.remove(&cookie);
 
@@ -600,7 +600,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 						}
 					}
 
-					server::Request::SetActive(active) => {
+					interface::Request::SetActive(active) => {
 						if active {
 							if started.is_none() {
 								act!(start);
@@ -613,29 +613,29 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 						}
 					}
 
-					server::Request::GetActive => {
-						server.response(server::Response::Active(started.is_some())).unwrap();
+					interface::Request::GetActive => {
+						interface.response(interface::Response::Active(started.is_some())).unwrap();
 					}
 
-					server::Request::GetActiveTime => {
+					interface::Request::GetActiveTime => {
 						timer.report(GET_ACTIVE_TIME).unwrap();
 					}
 
-					server::Request::GetSessionIdle => {
+					interface::Request::GetSessionIdle => {
 						timer.report(GET_SESSION_IDLE).unwrap();
 					}
 
-					server::Request::GetSessionIdleTime => {
+					interface::Request::GetSessionIdleTime => {
 						timer.report(GET_SESSION_IDLE_TIME).unwrap();
 					}
 
-					server::Request::Suspend { .. } => {
+					interface::Request::Suspend { .. } => {
 						act!(suspend);
 
-						server.response(server::Response::Suspend(insert(&mut suspenders))).unwrap();
+						interface.response(interface::Response::Suspend(insert(&mut suspenders))).unwrap();
 					}
 
-					server::Request::Resume(cookie) => {
+					interface::Request::Resume(cookie) => {
 						if suspenders.contains(&cookie) {
 							suspenders.remove(&cookie);
 
@@ -643,7 +643,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 						}
 					}
 
-					server::Request::PrepareForSleep(time) => {
+					interface::Request::PrepareForSleep(time) => {
 						if let Some(time) = time {
 							match config.locker().on_suspend() {
 								config::OnSuspend::Ignore |
@@ -681,15 +681,15 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			event = t.recv() => {
 				match event.unwrap() {
 					timer::Response::Report { id: GET_ACTIVE_TIME, started, .. } => {
-						server.response(server::Response::ActiveTime(started.map_or(0, |i| i.elapsed().as_secs()))).unwrap();
+						interface.response(interface::Response::ActiveTime(started.map_or(0, |i| i.elapsed().as_secs()))).unwrap();
 					}
 
 					timer::Response::Report { id: GET_SESSION_IDLE, idle, .. } => {
-						server.response(server::Response::SessionIdle(idle.elapsed().as_secs() >= 5)).unwrap();
+						interface.response(interface::Response::SessionIdle(idle.elapsed().as_secs() >= 5)).unwrap();
 					}
 
 					timer::Response::Report { id: GET_SESSION_IDLE_TIME, idle, .. } => {
-						server.response(server::Response::SessionIdleTime(idle.elapsed().as_secs())).unwrap();
+						interface.response(interface::Response::SessionIdleTime(idle.elapsed().as_secs())).unwrap();
 					}
 
 					timer::Response::Report { .. } => {
@@ -708,8 +708,15 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 						suspended = None;
 					}
 
-					timer::Response::Heartbeat => {
+					timer::Response::Heartbeat(idle) => {
 						locker.sanitize().unwrap();
+
+						if idle.elapsed().as_secs() > 5 {
+							interface.signal(interface::Signal::SessionIdle(true)).unwrap()
+						}
+						else {
+							interface.signal(interface::Signal::SessionIdle(false)).unwrap()
+						}
 					}
 
 					timer::Response::Start => {
