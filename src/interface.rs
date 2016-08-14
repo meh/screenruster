@@ -146,309 +146,287 @@ impl Interface {
 		let (sender, i_receiver) = channel();
 		let (i_sender, receiver) = channel();
 		let (s_sender, signals)  = channel();
+		let (g_sender, g_receiver) = channel::<error::Result<()>>();
 
-		// Listen for relevant system events.
-		{
-			let sender = sender.clone();
+		macro_rules! dbus {
+			(connect) => (
+				match dbus::Connection::get_private(dbus::BusType::Session) {
+					Ok(value) => {
+						value
+					}
 
-			thread::spawn(move || {
-				let c = dbus::Connection::get_private(dbus::BusType::System).unwrap();
-
-				// Watch signals from SystemD for system suspend/resume.
-				c.add_match("path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'").unwrap();
-
-				for item in c.iter(1_000_000_000) {
-					if let dbus::ConnectionItem::Signal(m) = item {
-						match (&*m.interface().unwrap(), &*m.member().unwrap()) {
-							("org.freedesktop.login1.Manager", "PrepareForSleep") => {
-								if let Some(status) = m.get1() {
-									sender.send(Request::PrepareForSleep(
-										if status { Some(SystemTime::now()) } else { None })).unwrap();
-								}
-							}
-
-							_ => ()
-						}
+					Err(error) => {
+						g_sender.send(Err(error.into())).unwrap();
+						return;
 					}
 				}
-			});
+			);
+
+			(register $conn:expr, $name:expr) => (
+				match $conn.register_name($name, dbus::NameFlag::DoNotQueue as u32) {
+					Ok(dbus::RequestNameReply::Exists) => {
+						g_sender.send(Err(error::DBus::AlreadyRegistered.into())).unwrap();
+						return;
+					}
+
+					Err(error) => {
+						g_sender.send(Err(error.into())).unwrap();
+						return;
+					}
+
+					Ok(value) => {
+						value
+					}
+				}
+			);
+
+			(watch $conn:expr, $filter:expr) => (
+				if let Err(error) =  $conn.add_match($filter) {
+					g_sender.send(Err(error.into())).unwrap();
+					return;
+				}
+			);
+
+			(ready) => (
+				g_sender.send(Ok(())).unwrap();
+			);
+
+			(check) => (
+				g_receiver.recv().unwrap()
+			)
 		}
 
-		// DBus interface.
-		{
-			let sender                 = sender.clone();
-			let (g_sender, g_receiver) = channel::<error::Result<()>>();
+		thread::spawn(move || {
+			let c = dbus!(connect);
+			let f = dbus::tree::Factory::new_fn();
 
-			macro_rules! dbus {
-				(connect) => (
-					match dbus::Connection::get_private(dbus::BusType::Session) {
-						Ok(value) => {
-							value
+			dbus!(register c, "org.gnome.ScreenSaver");
+			dbus!(register c, "meh.rust.ScreenSaver");
+			dbus!(watch c, "path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'");
+			dbus!(ready);
+
+			let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
+			let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
+			let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
+			let end    = Arc::new(f.signal("AuthenticationRequestEnd"));
+
+			let tree = f.tree()
+				// ScreenRuster interface.
+				.add(f.object_path("/meh/rust/ScreenSaver").introspectable().add(f.interface("meh.rust.ScreenSaver")
+					.add_m(f.method("Reload", |m, _, _| {
+						if config.ignores("reload") {
+							return Err(dbus::tree::MethodErr::failed(&"Reload is ignored"));
 						}
 
-						Err(error) => {
-							g_sender.send(Err(error.into())).unwrap();
-							return;
-						}
-					}
-				);
+						sender.send(Request::Reload(m.get1())).unwrap();
 
-				(register $conn:expr, $name:expr) => (
-					match $conn.register_name($name, dbus::NameFlag::DoNotQueue as u32) {
-						Ok(dbus::RequestNameReply::Exists) => {
-							g_sender.send(Err(error::DBus::AlreadyRegistered.into())).unwrap();
-							return;
+						if let Response::Reload(value) = receiver.recv().unwrap() {
+							Ok(vec![m.method_return().append1(value)])
 						}
+						else {
+							unreachable!();
+						}
+					}).inarg::<String, _>("path").outarg::<bool, _>("success"))
 
-						Err(error) => {
-							g_sender.send(Err(error.into())).unwrap();
-							return;
+					.add_m(f.method("Suspend", |m, _, _| {
+						if config.ignores("suspend") {
+							return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
 						}
 
-						Ok(value) => {
-							value
-						}
-					}
-				);
+						if let (Some(application), Some(reason)) = m.get2() {
+							sender.send(Request::Suspend {
+								application: application,
+								reason:      reason
+							}).unwrap();
 
-				(ready) => (
-					g_sender.send(Ok(())).unwrap();
-				);
-
-				(check) => (
-					g_receiver.recv().unwrap()
-				)
-			}
-
-			thread::spawn(move || {
-				let c = dbus!(connect);
-				let f = dbus::tree::Factory::new_fn();
-
-				dbus!(register c, "org.gnome.ScreenSaver");
-				dbus!(register c, "meh.rust.ScreenSaver");
-				dbus!(ready);
-
-				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
-				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
-				let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
-				let end    = Arc::new(f.signal("AuthenticationRequestEnd"));
-
-				let tree = f.tree()
-					// ScreenRuster interface.
-					.add(f.object_path("/meh/rust/ScreenSaver").introspectable().add(f.interface("meh.rust.ScreenSaver")
-						.add_m(f.method("Reload", |m, _, _| {
-							if config.ignores("reload") {
-								return Err(dbus::tree::MethodErr::failed(&"Reload is ignored"));
-							}
-
-							sender.send(Request::Reload(m.get1())).unwrap();
-
-							if let Response::Reload(value) = receiver.recv().unwrap() {
+							if let Response::Suspend(value) = receiver.recv().unwrap() {
 								Ok(vec![m.method_return().append1(value)])
 							}
 							else {
 								unreachable!();
 							}
-						}).inarg::<String, _>("path").outarg::<bool, _>("success"))
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
-						.add_m(f.method("Suspend", |m, _, _| {
-							if config.ignores("suspend") {
-								return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
-							}
+					.add_m(f.method("Resume", |m, _, _| {
+						if config.ignores("suspend") {
+							return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
+						}
 
-							if let (Some(application), Some(reason)) = m.get2() {
-								sender.send(Request::Suspend {
-									application: application,
-									reason:      reason
-								}).unwrap();
-
-								if let Response::Suspend(value) = receiver.recv().unwrap() {
-									Ok(vec![m.method_return().append1(value)])
-								}
-								else {
-									unreachable!();
-								}
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
-
-						.add_m(f.method("Resume", |m, _, _| {
-							if config.ignores("suspend") {
-								return Err(dbus::tree::MethodErr::failed(&"Suspend is ignored"));
-							}
-
-							if let Some(cookie) = m.get1() {
-								sender.send(Request::Resume(cookie)).unwrap();
-
-								Ok(vec![m.method_return()])
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).inarg::<u32, _>("cookie"))))
-
-					// GNOME screensaver interface.
-					.add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
-						.add_m(f.method("Lock", |m, _, _| {
-							sender.send(Request::Lock).unwrap();
+						if let Some(cookie) = m.get1() {
+							sender.send(Request::Resume(cookie)).unwrap();
 
 							Ok(vec![m.method_return()])
-						}))
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).inarg::<u32, _>("cookie"))))
 
-						.add_m(f.method("Cycle", |m, _, _| {
-							sender.send(Request::Cycle).unwrap();
+				// GNOME screensaver interface.
+				.add(f.object_path("/org/gnome/ScreenSaver").introspectable().add(f.interface("org.gnome.ScreenSaver")
+					.add_m(f.method("Lock", |m, _, _| {
+						sender.send(Request::Lock).unwrap();
 
-							Ok(vec![m.method_return()])
-						}))
+						Ok(vec![m.method_return()])
+					}))
 
-						.add_m(f.method("SimulateUserActivity", |m, _, _| {
-							sender.send(Request::SimulateUserActivity).unwrap();
+					.add_m(f.method("Cycle", |m, _, _| {
+						sender.send(Request::Cycle).unwrap();
 
-							Ok(vec![m.method_return()])
-						}))
+						Ok(vec![m.method_return()])
+					}))
 
-						.add_m(f.method("Inhibit", |m, _, _| {
-							if config.ignores("inhibit") {
-								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
-							}
+					.add_m(f.method("SimulateUserActivity", |m, _, _| {
+						sender.send(Request::SimulateUserActivity).unwrap();
 
-							if let (Some(application), Some(reason)) = m.get2() {
-								sender.send(Request::Inhibit {
-									application: application,
-									reason:      reason
-								}).unwrap();
+						Ok(vec![m.method_return()])
+					}))
 
-								if let Response::Inhibit(value) = receiver.recv().unwrap() {
-									Ok(vec![m.method_return().append1(value)])
-								}
-								else {
-									unreachable!();
-								}
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
+					.add_m(f.method("Inhibit", |m, _, _| {
+						if config.ignores("inhibit") {
+							return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
+						}
 
-						.add_m(f.method("UnInhibit", |m, _, _| {
-							if config.ignores("inhibit") {
-								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
-							}
+						if let (Some(application), Some(reason)) = m.get2() {
+							sender.send(Request::Inhibit {
+								application: application,
+								reason:      reason
+							}).unwrap();
 
-							if let Some(cookie) = m.get1() {
-								sender.send(Request::UnInhibit(cookie)).unwrap();
-
-								Ok(vec![m.method_return()])
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).inarg::<u32, _>("cookie"))
-
-						.add_m(f.method("Throttle", |m, _, _| {
-							if config.ignores("throttle") {
-								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
-							}
-
-							if let (Some(application), Some(reason)) = m.get2() {
-								sender.send(Request::Throttle {
-									application: application,
-									reason:      reason
-								}).unwrap();
-
-								if let Response::Throttle(value) = receiver.recv().unwrap() {
-									Ok(vec![m.method_return().append1(value)])
-								}
-								else {
-									unreachable!();
-								}
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
-
-						.add_m(f.method("UnThrottle", |m, _, _| {
-							if config.ignores("throttle") {
-								return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
-							}
-
-							if let Some(cookie) = m.get1() {
-								sender.send(Request::UnThrottle(cookie)).unwrap();
-
-								Ok(vec![m.method_return()])
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).inarg::<u32, _>("cookie"))
-
-						.add_m(f.method("SetActive", |m, _, _| {
-							if let Some(value) = m.get1() {
-								sender.send(Request::SetActive(value)).unwrap();
-
-								Ok(vec![m.method_return()])
-							}
-							else {
-								Err(dbus::tree::MethodErr::no_arg())
-							}
-						}).inarg::<bool, _>("active"))
-
-						.add_m(f.method("GetActive", |m, _, _| {
-							sender.send(Request::GetActive).unwrap();
-
-							if let Response::Active(value) = receiver.recv().unwrap() {
+							if let Response::Inhibit(value) = receiver.recv().unwrap() {
 								Ok(vec![m.method_return().append1(value)])
 							}
 							else {
 								unreachable!();
 							}
-						}).outarg::<bool, _>("active"))
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
-						.add_m(f.method("GetActiveTime", |m, _, _| {
-							sender.send(Request::GetActiveTime).unwrap();
+					.add_m(f.method("UnInhibit", |m, _, _| {
+						if config.ignores("inhibit") {
+							return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
+						}
 
-							if let Response::ActiveTime(time) = receiver.recv().unwrap() {
-								Ok(vec![m.method_return().append1(time)])
-							}
-							else {
-								unreachable!();
-							}
-						}).outarg::<u64, _>("time"))
+						if let Some(cookie) = m.get1() {
+							sender.send(Request::UnInhibit(cookie)).unwrap();
 
-						.add_m(f.method("GetSessionIdle", |m, _, _| {
-							sender.send(Request::GetSessionIdle).unwrap();
+							Ok(vec![m.method_return()])
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).inarg::<u32, _>("cookie"))
 
-							if let Response::SessionIdle(value) = receiver.recv().unwrap() {
+					.add_m(f.method("Throttle", |m, _, _| {
+						if config.ignores("throttle") {
+							return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
+						}
+
+						if let (Some(application), Some(reason)) = m.get2() {
+							sender.send(Request::Throttle {
+								application: application,
+								reason:      reason
+							}).unwrap();
+
+							if let Response::Throttle(value) = receiver.recv().unwrap() {
 								Ok(vec![m.method_return().append1(value)])
 							}
 							else {
 								unreachable!();
 							}
-						}).outarg::<bool, _>("idle"))
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).in_args(vec![dbus::Signature::make::<String>(), dbus::Signature::make::<String>()]))
 
-						.add_m(f.method("GetSessionIdleTime", |m, _, _| {
-							sender.send(Request::GetSessionIdleTime).unwrap();
+					.add_m(f.method("UnThrottle", |m, _, _| {
+						if config.ignores("throttle") {
+							return Err(dbus::tree::MethodErr::failed(&"Inhibit is ignored"));
+						}
 
-							if let Response::SessionIdleTime(time) = receiver.recv().unwrap() {
-								Ok(vec![m.method_return().append1(time)])
-							}
-							else {
-								unreachable!();
-							}
-						}).outarg::<u64, _>("time"))
+						if let Some(cookie) = m.get1() {
+							sender.send(Request::UnThrottle(cookie)).unwrap();
 
-						.add_s_arc(active.clone())
-						.add_s_arc(idle.clone())
-						.add_s_arc(begin.clone())
-						.add_s_arc(end.clone())));
+							Ok(vec![m.method_return()])
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).inarg::<u32, _>("cookie"))
 
-				tree.set_registered(&c, true).unwrap();
+					.add_m(f.method("SetActive", |m, _, _| {
+						if let Some(value) = m.get1() {
+							sender.send(Request::SetActive(value)).unwrap();
 
-				for item in tree.run(&c, c.iter(500)) {
-					if let dbus::ConnectionItem::Nothing = item {
+							Ok(vec![m.method_return()])
+						}
+						else {
+							Err(dbus::tree::MethodErr::no_arg())
+						}
+					}).inarg::<bool, _>("active"))
+
+					.add_m(f.method("GetActive", |m, _, _| {
+						sender.send(Request::GetActive).unwrap();
+
+						if let Response::Active(value) = receiver.recv().unwrap() {
+							Ok(vec![m.method_return().append1(value)])
+						}
+						else {
+							unreachable!();
+						}
+					}).outarg::<bool, _>("active"))
+
+					.add_m(f.method("GetActiveTime", |m, _, _| {
+						sender.send(Request::GetActiveTime).unwrap();
+
+						if let Response::ActiveTime(time) = receiver.recv().unwrap() {
+							Ok(vec![m.method_return().append1(time)])
+						}
+						else {
+							unreachable!();
+						}
+					}).outarg::<u64, _>("time"))
+
+					.add_m(f.method("GetSessionIdle", |m, _, _| {
+						sender.send(Request::GetSessionIdle).unwrap();
+
+						if let Response::SessionIdle(value) = receiver.recv().unwrap() {
+							Ok(vec![m.method_return().append1(value)])
+						}
+						else {
+							unreachable!();
+						}
+					}).outarg::<bool, _>("idle"))
+
+					.add_m(f.method("GetSessionIdleTime", |m, _, _| {
+						sender.send(Request::GetSessionIdleTime).unwrap();
+
+						if let Response::SessionIdleTime(time) = receiver.recv().unwrap() {
+							Ok(vec![m.method_return().append1(time)])
+						}
+						else {
+							unreachable!();
+						}
+					}).outarg::<u64, _>("time"))
+
+					.add_s_arc(active.clone())
+					.add_s_arc(idle.clone())
+					.add_s_arc(begin.clone())
+					.add_s_arc(end.clone())));
+
+			tree.set_registered(&c, true).unwrap();
+
+			for item in tree.run(&c, c.iter(500)) {
+				match item {
+					dbus::ConnectionItem::Nothing => {
 						while let Ok(signal) = signals.try_recv() {
 							c.send(match signal {
 								Signal::Active(status) => {
@@ -469,11 +447,26 @@ impl Interface {
 							}).unwrap();
 						}
 					}
-				}
-			});
 
-			dbus!(check)?;
-		}
+					dbus::ConnectionItem::Signal(m) => {
+						match (&*m.interface().unwrap(), &*m.member().unwrap()) {
+							("org.freedesktop.login1.Manager", "PrepareForSleep") => {
+								if let Some(status) = m.get1() {
+									sender.send(Request::PrepareForSleep(
+										if status { Some(SystemTime::now()) } else { None })).unwrap();
+								}
+							}
+
+							_ => ()
+						}
+					}
+
+					_ => ()
+				}
+			}
+		});
+
+		dbus!(check)?;
 
 		Ok(Interface {
 			receiver: i_receiver,
