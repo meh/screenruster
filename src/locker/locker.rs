@@ -29,7 +29,7 @@ use error;
 use config::Config;
 use api;
 use timer;
-use saver::{self, Saver, Password, Pointer};
+use saver::{self, Saver, Safety, Password, Pointer};
 use super::{Display, Window};
 use platform::Keyboard;
 
@@ -81,16 +81,42 @@ impl Locker {
 		let (s_sender, s_receiver) = channel();
 
 		thread::spawn(move || {
-			macro_rules! saver {
-				($id:expr) => (
-					savers.get_mut(&$id).unwrap()
-				);
-			}
-
 			macro_rules! window {
+				(? $id:expr) => (
+					windows.get_mut(&$id)
+				);
+
 				($id:expr) => (
 					windows.get_mut(&$id).unwrap()
 				);
+			}
+
+			macro_rules! saver {
+				(? $id:expr) => (
+					savers.get_mut(&$id)
+				);
+
+				($id:expr) => (
+					savers.get_mut(&$id).unwrap()
+				);
+
+				(safety $id:expr) => (
+					saver!(safety on window!($id));
+				);
+
+				(safety on $window:expr) => (
+					if let Some(saver) = saver!(? $window.id()) {
+						if $window.has_keyboard() && $window.has_pointer() {
+							saver.safety(Safety::High).unwrap();
+						}
+						else if $window.has_keyboard() {
+							saver.safety(Safety::Medium).unwrap();
+						}
+						else {
+							saver.safety(Safety::Low).unwrap();
+						}
+					}
+				)
 			}
 
 			let x = (***display).as_ref();
@@ -108,7 +134,16 @@ impl Locker {
 								display.sanitize();
 
 								for window in windows.values_mut() {
+									let keyboard = window.has_keyboard();
+									let pointer  = window.has_pointer();
+
 									window.sanitize();
+
+									if keyboard == window.has_keyboard() && pointer == window.has_pointer() {
+										continue;
+									}
+
+									saver!(safety on window);
 								}
 							}
 
@@ -169,7 +204,6 @@ impl Locker {
 										}
 									}
 
-									// FIXME(meh): Do not crash on grab failure.
 									window.lock().unwrap();
 									window.blank();
 								}
@@ -220,8 +254,8 @@ impl Locker {
 								if saver!(id).was_started() {
 									sender.send(Response::Timeout(timer::Timeout::Cancel { id: id as u64 })).unwrap();
 
-									// FIXME(meh): Do not crash on grab failure.
 									window!(id).lock().unwrap();
+									saver!(safety id);
 								}
 								else {
 									saver!(id).kill();

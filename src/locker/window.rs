@@ -85,9 +85,29 @@ impl Window {
 		})
 	}
 
+	/// Check if the window is locked.
+	pub fn is_locked(&self) -> bool {
+		self.locked
+	}
+
+	/// Check if the window grabbed the keyboard.
+	pub fn has_keyboard(&self) -> bool {
+		self.keyboard
+	}
+
+	/// Check if the window grabbed the pointer.
+	pub fn has_pointer(&self) -> bool {
+		self.pointer
+	}
+
 	/// Sanitize the window.
 	pub fn sanitize(&mut self) {
 		if self.locked {
+			// Try to grab the keyboard again in case it wasn't grabbed when locking.
+			if !self.keyboard && self.grab(Grab::Keyboard).is_ok() {
+				self.keyboard = true;
+			}
+
 			// Try to grab the pointer again in case it wasn't grabbed when locking.
 			if !self.pointer && self.grab(Grab::Pointer).is_ok() {
 				self.pointer = true;
@@ -179,18 +199,13 @@ impl Window {
 			// other applications may be stealing our thunder.
 			if !self.keyboard {
 				if let Err(err) = self.try_grab(Grab::Keyboard, 500) {
-					xcb::unmap_window(&self.display, self.id());
-
-					error!("coult not grab keyboard: {:?}", err);
-					return Err(err);
+					warn!("could not grab pointer: {:?}", err);
 				}
 				else {
 					self.keyboard = true;
 				}
 			}
 
-			// TODO(meh): Consider if failing to grab pointer should be fatal,
-			//            probably not.
 			if !self.pointer {
 				if let Err(err) = self.try_grab(Grab::Pointer, 500) {
 					warn!("could not grab pointer: {:?}", err);

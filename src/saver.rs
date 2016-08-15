@@ -25,7 +25,7 @@ use std::sync::mpsc::{Receiver, TryRecvError, Sender, SendError, channel};
 use toml;
 use log;
 use api::{self, json};
-pub use api::{Password, Pointer};
+pub use api::{Safety, Password, Pointer};
 
 use error;
 
@@ -148,6 +148,15 @@ impl Saver {
 								api::Request::Config(config) => object!{
 									"type"   => "config",
 									"config" => config
+								},
+
+								api::Request::Safety(level) => object!{
+									"type"   => "safety",
+									"safety" => match level {
+										Safety::High   => "high",
+										Safety::Medium => "medium",
+										Safety::Low    => "low",
+									}
 								},
 
 								api::Request::Target { display, screen, window } => object!{
@@ -324,6 +333,11 @@ impl Saver {
 		}
 
 		self.send(api::Request::Config(convert(&toml::Value::Table(config))))
+	}
+
+	/// Specify the safety level.
+	pub fn safety(&mut self, level: Safety) -> Result<(), SendError<Request>> {
+		self.send(api::Request::Safety(level))
 	}
 
 	/// Select the rendering target for the saver.
