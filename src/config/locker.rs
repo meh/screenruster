@@ -17,6 +17,8 @@
 
 use std::sync::{Arc, RwLock};
 
+use toml;
+
 use super::OnSuspend;
 
 #[derive(Clone, Default, Debug)]
@@ -42,6 +44,34 @@ impl Default for Data {
 }
 
 impl Locker {
+	pub fn load(&self, table: &toml::Table) {
+		if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
+			if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
+				self.0.write().unwrap().display = Some(value.into());
+			}
+
+			if let Some(false) = table.get("dpms").and_then(|v| v.as_bool()) {
+				self.0.write().unwrap().dpms = false;
+			}
+
+			if let Some(value) = table.get("on-suspend").and_then(|v| v.as_str()) {
+				self.0.write().unwrap().on_suspend = match value {
+					"use-system-time" =>
+						OnSuspend::UseSystemTime,
+
+					"lock" =>
+						OnSuspend::Lock,
+
+					"activate" =>
+						OnSuspend::Activate,
+
+					_ =>
+						Default::default()
+				};
+			}
+		}
+	}
+
 	pub fn display(&self) -> Option<String> {
 		self.0.read().unwrap().display.clone()
 	}

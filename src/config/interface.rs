@@ -18,6 +18,8 @@
 use std::sync::{Arc, RwLock};
 use std::collections::HashSet;
 
+use toml;
+
 #[derive(Clone, Default, Debug)]
 pub struct Interface(pub(super) Arc<RwLock<Data>>);
 
@@ -35,6 +37,17 @@ impl Default for Data {
 }
 
 impl Interface {
+	pub fn load(&self, table: &toml::Table) {
+		if let Some(table) = table.get("interface").and_then(|v| v.as_table()) {
+			if let Some(array) = table.get("ignore").and_then(|v| v.as_slice()) {
+				self.0.write().unwrap().ignore = array.iter()
+					.filter(|v| v.as_str().is_some())
+					.map(|v| v.as_str().unwrap().to_string())
+					.collect();
+			}
+		}
+	}
+
 	pub fn ignores<T: AsRef<str>>(&self, name: T) -> bool {
 		self.0.read().unwrap().ignore.contains(name.as_ref())
 	}

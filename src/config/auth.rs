@@ -16,6 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::{Arc, RwLock};
+
 use toml;
 
 #[derive(Clone, Default, Debug)]
@@ -35,6 +36,12 @@ impl Default for Data {
 }
 
 impl Auth {
+	pub fn load(&self, table: &toml::Table) {
+		if let Some(table) = table.get("auth").and_then(|v| v.as_table()) {
+			self.0.write().unwrap().table = table.clone();
+		}
+	}
+
 	/// Get the configuration for a specific authorization module.
 	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
 		self.0.read().unwrap().table.get(name.as_ref())

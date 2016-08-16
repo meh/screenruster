@@ -24,17 +24,17 @@ use toml;
 use xdg;
 
 use error;
-use super::{Locker, Interface, Timer, Auth, Saver, OnSuspend};
+use super::{Locker, Interface, Timer, Auth, Saver};
 
 #[derive(Clone, Debug, Default)]
 pub struct Config {
 	path: Arc<RwLock<Option<PathBuf>>>,
 
-	locker: Locker,
+	locker:    Locker,
 	interface: Interface,
-	timer:  Timer,
-	auth:   Auth,
-	saver:  Saver,
+	timer:     Timer,
+	auth:      Auth,
+	saver:     Saver,
 }
 
 impl Config {
@@ -46,11 +46,11 @@ impl Config {
 	}
 
 	pub fn reset(&self) {
-		*self.locker.0.write().unwrap() = Default::default();
+		*self.locker.0.write().unwrap()    = Default::default();
 		*self.interface.0.write().unwrap() = Default::default();
-		*self.timer.0.write().unwrap()  = Default::default();
-		*self.auth.0.write().unwrap()   = Default::default();
-		*self.saver.0.write().unwrap()  = Default::default();
+		*self.timer.0.write().unwrap()     = Default::default();
+		*self.auth.0.write().unwrap()      = Default::default();
+		*self.saver.0.write().unwrap()     = Default::default();
 	}
 
 	pub fn reload<T: AsRef<Path>>(&self, path: Option<T>) -> error::Result<()> {
@@ -68,7 +68,7 @@ impl Config {
 
 		let table = if let Ok(mut file) = File::open(path) {
 			let mut content = String::new();
-			file.read_to_string(&mut content).unwrap();
+			file.read_to_string(&mut content)?;
 
 			toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?
 		}
@@ -76,86 +76,11 @@ impl Config {
 			toml::Table::new()
 		};
 
-		// Load `Locker`.
-		if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
-			if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
-				self.locker.0.write().unwrap().display = Some(value.into());
-			}
-
-			if let Some(false) = table.get("dpms").and_then(|v| v.as_bool()) {
-				self.locker.0.write().unwrap().dpms = false;
-			}
-
-			if let Some(value) = table.get("on-suspend").and_then(|v| v.as_str()) {
-				self.locker.0.write().unwrap().on_suspend = match value {
-					"use-system-time" =>
-						OnSuspend::UseSystemTime,
-
-					"lock" =>
-						OnSuspend::Lock,
-
-					"activate" =>
-						OnSuspend::Activate,
-
-					_ =>
-						Default::default()
-				};
-			}
-		}
-
-		// Load `Interface`.
-		if let Some(table) = table.get("interface").and_then(|v| v.as_table()) {
-			if let Some(array) = table.get("ignore").and_then(|v| v.as_slice()) {
-				self.interface.0.write().unwrap().ignore = array.iter()
-					.filter(|v| v.as_str().is_some())
-					.map(|v| v.as_str().unwrap().to_string())
-					.collect();
-			}
-		}
-
-		// Load `Timer`.
-		if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
-			if let Some(value) = seconds(table.get("beat")) {
-				self.timer.0.write().unwrap().beat = value;
-			}
-
-			if let Some(value) = seconds(table.get("timeout")) {
-				self.timer.0.write().unwrap().timeout = value;
-			}
-
-			if let Some(value) = seconds(table.get("lock")) {
-				self.timer.0.write().unwrap().lock = Some(value);
-			}
-
-			if let Some(value) = seconds(table.get("blank")) {
-				self.timer.0.write().unwrap().blank = Some(value);
-			}
-		}
-
-		// Load `Auth`.
-		if let Some(table) = table.get("auth").and_then(|v| v.as_table()) {
-			self.auth.0.write().unwrap().table = table.clone();
-		}
-
-		// Load `Saver`.
-		if let Some(table) = table.get("saver").and_then(|v| v.as_table()) {
-			if let Some(value) = seconds(table.get("timeout")) {
-				self.saver.0.write().unwrap().timeout = value;
-			}
-
-			if let Some(value) = table.get("throttle").and_then(|v| v.as_bool()) {
-				self.saver.0.write().unwrap().throttle = value;
-			}
-
-			if let Some(value) = table.get("use").and_then(|v| v.as_slice()) {
-				self.saver.0.write().unwrap().using = value.iter()
-					.filter(|v| v.as_str().is_some())
-					.map(|v| v.as_str().unwrap().into())
-					.collect();
-			}
-
-			self.saver.0.write().unwrap().table = table.clone();
-		}
+		self.locker.load(&table);
+		self.interface.load(&table);
+		self.timer.load(&table);
+		self.auth.load(&table);
+		self.saver.load(&table);
 
 		Ok(())
 	}
@@ -178,51 +103,5 @@ impl Config {
 
 	pub fn saver(&self) -> Saver {
 		self.saver.clone()
-	}
-}
-
-fn seconds(value: Option<&toml::Value>) -> Option<u32> {
-	macro_rules! try {
-		($body:expr) => (
-			if let Ok(value) = $body {
-				value: u32
-			}
-			else {
-				return None;
-			}
-		);
-	}
-
-	if value.is_none() {
-		return None;
-	}
-
-	match *value.unwrap() {
-		toml::Value::Integer(value) => {
-			Some(value as u32)
-		}
-
-		toml::Value::Float(value) => {
-			Some(value.round() as u32)
-		}
-
-		toml::Value::String(ref value) => {
-			match value.split(':').collect::<Vec<&str>>()[..] {
-				[hours, minutes, seconds] =>
-					Some(try!(hours.parse()) * 60 * 60 + try!(minutes.parse()) * 60 + try!(seconds.parse())),
-
-				[minutes, seconds] =>
-					Some(try!(minutes.parse()) * 60 + try!(seconds.parse())),
-
-				[seconds] =>
-					Some(try!(seconds.parse())),
-
-				_ =>
-					None
-			}
-		}
-
-		_ =>
-			None
 	}
 }

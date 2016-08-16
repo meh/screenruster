@@ -16,6 +16,7 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::{Arc, RwLock};
+
 use toml;
 
 #[derive(Clone, Default, Debug)]
@@ -43,6 +44,27 @@ impl Default for Data {
 }
 
 impl Saver {
+	pub fn load(&self, table: &toml::Table) {
+		if let Some(table) = table.get("saver").and_then(|v| v.as_table()) {
+			if let Some(value) = super::seconds(table.get("timeout")) {
+				self.0.write().unwrap().timeout = value;
+			}
+
+			if let Some(value) = table.get("throttle").and_then(|v| v.as_bool()) {
+				self.0.write().unwrap().throttle = value;
+			}
+
+			if let Some(value) = table.get("use").and_then(|v| v.as_slice()) {
+				self.0.write().unwrap().using = value.iter()
+					.filter(|v| v.as_str().is_some())
+					.map(|v| v.as_str().unwrap().into())
+					.collect();
+			}
+
+			self.0.write().unwrap().table = table.clone();
+		}
+	}
+
 	/// The timeout for saver requests.
 	pub fn timeout(&self) -> u32 {
 		self.0.read().unwrap().timeout

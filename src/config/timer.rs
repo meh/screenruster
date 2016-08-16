@@ -17,6 +17,8 @@
 
 use std::sync::{Arc, RwLock};
 
+use toml;
+
 #[derive(Clone, Default, Debug)]
 pub struct Timer(pub(super) Arc<RwLock<Data>>);
 
@@ -40,6 +42,26 @@ impl Default for Data {
 }
 
 impl Timer {
+	pub fn load(&self, table: &toml::Table) {
+		if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
+			if let Some(value) = super::seconds(table.get("beat")) {
+				self.0.write().unwrap().beat = value;
+			}
+
+			if let Some(value) = super::seconds(table.get("timeout")) {
+				self.0.write().unwrap().timeout = value;
+			}
+
+			if let Some(value) = super::seconds(table.get("lock")) {
+				self.0.write().unwrap().lock = Some(value);
+			}
+
+			if let Some(value) = super::seconds(table.get("blank")) {
+				self.0.write().unwrap().blank = Some(value);
+			}
+		}
+	}
+
 	pub fn beat(&self) -> u32 {
 		self.0.read().unwrap().beat
 	}

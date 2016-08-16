@@ -15,6 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
+use toml;
+
 mod locker;
 pub use self::locker::Locker;
 
@@ -44,5 +46,51 @@ pub enum OnSuspend {
 impl Default for OnSuspend {
 	fn default() -> OnSuspend {
 		OnSuspend::Ignore
+	}
+}
+
+fn seconds(value: Option<&toml::Value>) -> Option<u32> {
+	macro_rules! try {
+		($body:expr) => (
+			if let Ok(value) = $body {
+				value: u32
+			}
+			else {
+				return None;
+			}
+		);
+	}
+
+	if value.is_none() {
+		return None;
+	}
+
+	match *value.unwrap() {
+		toml::Value::Integer(value) => {
+			Some(value as u32)
+		}
+
+		toml::Value::Float(value) => {
+			Some(value.round() as u32)
+		}
+
+		toml::Value::String(ref value) => {
+			match value.split(':').collect::<Vec<&str>>()[..] {
+				[hours, minutes, seconds] =>
+					Some(try!(hours.parse()) * 60 * 60 + try!(minutes.parse()) * 60 + try!(seconds.parse())),
+
+				[minutes, seconds] =>
+					Some(try!(minutes.parse()) * 60 + try!(seconds.parse())),
+
+				[seconds] =>
+					Some(try!(seconds.parse())),
+
+				_ =>
+					None
+			}
+		}
+
+		_ =>
+			None
 	}
 }
