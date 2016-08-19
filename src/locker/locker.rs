@@ -82,6 +82,10 @@ impl Locker {
 
 		thread::spawn(move || {
 			macro_rules! window {
+				(list) => (
+					windows.values_mut()
+				);
+
 				(? $id:expr) => (
 					windows.get_mut(&$id)
 				);
@@ -92,12 +96,16 @@ impl Locker {
 			}
 
 			macro_rules! saver {
-				(? $id:expr) => (
-					savers.get_mut(&$id)
+				(list) => (
+					savers.values_mut()
 				);
 
-				($id:expr) => (
-					savers.get_mut(&$id).unwrap()
+				(add $id:expr => $saver:expr) => (
+					savers.insert($id, $saver);
+				);
+
+				(remove $id:expr) => (
+					savers.remove(&$id);
 				);
 
 				(safety $id:expr) => (
@@ -116,7 +124,15 @@ impl Locker {
 							saver.safety(Safety::Low).unwrap();
 						}
 					}
-				)
+				);
+
+				(? $id:expr) => (
+					savers.get_mut(&$id)
+				);
+
+				($id:expr) => (
+					savers.get_mut(&$id).unwrap()
+				);
 			}
 
 			let x = (***display).as_ref();
@@ -127,13 +143,15 @@ impl Locker {
 					event = receiver.recv() => {
 						match event.unwrap() {
 							Request::Timeout { id } => {
-								saver!(id as u32).kill();
+								if let Some(saver) = saver!(? id as u32) {
+									saver.kill();
+								}
 							}
 
 							Request::Sanitize => {
 								display.sanitize();
 
-								for window in windows.values_mut() {
+								for window in window!(list) {
 									let keyboard = window.has_keyboard();
 									let pointer  = window.has_pointer();
 
@@ -152,17 +170,17 @@ impl Locker {
 							}
 
 							Request::Throttle(value) => {
-								for saver in savers.values_mut() {
+								for saver in saver!(list) {
 									saver.throttle(value).unwrap();
 								}
 							}
 
 							Request::Power(value) => {
-								for window in windows.values_mut() {
+								for window in window!(list) {
 									window.power(value);
 								}
 
-								for saver in savers.values_mut() {
+								for saver in saver!(list) {
 									saver.blank(!value).unwrap();
 								}
 
@@ -170,7 +188,7 @@ impl Locker {
 							}
 
 							Request::Start => {
-								for window in windows.values_mut() {
+								for window in window!(list) {
 									if !config.saver().using().is_empty() {
 										let name = &config.saver().using()[rand::thread_rng().gen_range(0, config.saver().using().len())];
 
@@ -198,7 +216,7 @@ impl Locker {
 												saver.throttle(true).unwrap();
 											}
 
-											savers.insert(id, saver);
+											saver!(add id => saver);
 
 											continue;
 										}
@@ -210,7 +228,7 @@ impl Locker {
 							}
 
 							Request::Lock => {
-								for saver in savers.values_mut() {
+								for saver in saver!(list) {
 									saver.lock().unwrap();
 								}
 							}
@@ -218,14 +236,14 @@ impl Locker {
 							Request::Auth(state) => {
 								checking = false;
 
-								for saver in savers.values_mut() {
+								for saver in saver!(list) {
 									saver.password(if state { Password::Success } else { Password::Failure }).unwrap();
 								}
 							}
 
 							Request::Stop => {
 								for (&id, window) in &mut windows {
-									if let Some(saver) = savers.get_mut(&id) {
+									if let Some(saver) = saver!(? id) {
 										sender.send(Response::Timeout(timer::Timeout::Set {
 											id:      id as u64,
 											seconds: config.saver().timeout() as u64,
@@ -284,7 +302,7 @@ impl Locker {
 									window!(id).blank();
 								}
 
-								savers.remove(&id);
+								saver!(remove id);
 							}
 						}
 					},
@@ -298,11 +316,11 @@ impl Locker {
 							e if display.randr().map_or(false, |rr| e == rr.first_event() + xcb::randr::SCREEN_CHANGE_NOTIFY) => {
 								let event = xcb::cast_event(&event): &xcb::randr::ScreenChangeNotifyEvent;
 
-								for window in windows.values_mut() {
+								for window in window!(list) {
 									if window.root() == event.root() {
 										window.resize(event.width() as u32, event.height() as u32);
 
-										if let Some(saver) = savers.get_mut(&window.id()) {
+										if let Some(saver) = saver!(? window.id()) {
 											saver.resize(event.width() as u32, event.height() as u32).unwrap();
 										}
 									}
@@ -333,7 +351,7 @@ impl Locker {
 										key::KEY_BackSpace => {
 											password.pop();
 
-											for saver in savers.values_mut() {
+											for saver in saver!(list) {
 												saver.password(Password::Delete).unwrap();
 											}
 										}
@@ -342,14 +360,14 @@ impl Locker {
 										key::KEY_Escape => {
 											password.clear();
 
-											for saver in savers.values_mut() {
+											for saver in saver!(list) {
 												saver.password(Password::Reset).unwrap();
 											}
 										}
 
 										// Check authentication.
 										key::KEY_Return => {
-											for saver in savers.values_mut() {
+											for saver in saver!(list) {
 												saver.password(Password::Check).unwrap();
 											}
 
@@ -367,7 +385,7 @@ impl Locker {
 												for ch in keyboard.string(event.detail() as xkb::Keycode).chars() {
 													password.push(ch);
 
-													for saver in savers.values_mut() {
+													for saver in saver!(list) {
 														saver.password(Password::Insert).unwrap();
 													}
 												}
@@ -387,7 +405,7 @@ impl Locker {
 
 								let event = xcb::cast_event(&event): &xcb::ButtonPressEvent;
 								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
-									if let Some(saver) = savers.get_mut(&window.id()) {
+									if let Some(saver) = saver!(? window.id()) {
 										saver.pointer(Pointer::Button {
 											x: event.event_x() as i32,
 											y: event.event_y() as i32,
@@ -405,7 +423,7 @@ impl Locker {
 
 								let event = xcb::cast_event(&event): &xcb::MotionNotifyEvent;
 								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
-									if let Some(saver) = savers.get_mut(&window.id()) {
+									if let Some(saver) = saver!(? window.id()) {
 										saver.pointer(Pointer::Move {
 											x: event.event_x() as i32,
 											y: event.event_y() as i32,
