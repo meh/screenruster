@@ -9,9 +9,6 @@ description = "X11 screen saver and locker."
 repository  = "https://github.com/meh/screenruster"
 keywords    = ["x11", "graphics"]
 
-[profile.release]
-lto = true
-
 [features]
 default = ["auth-pam"]
 
