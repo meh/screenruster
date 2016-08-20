@@ -215,7 +215,8 @@ impl Interface {
 			let sender = sender.clone();
 
 			thread::spawn(move || {
-				fn block(c: &dbus::Connection) -> Option<dbus::OwnedFd> {
+				/// Inhibits system suspension temporarily.
+				fn inhibit(c: &dbus::Connection) -> Option<dbus::OwnedFd> {
 					dbus!(try c.send_with_reply_and_block(dbus!(try dbus::Message::new_method_call(
 						"org.freedesktop.login1",
 						"/org/freedesktop/login1",
@@ -228,24 +229,29 @@ impl Interface {
 						.get1()
 				}
 
-				let     system    = dbus!(connect system).unwrap();
-				let mut inhibitor = block(&system);
+				let system = dbus!(connect system).unwrap();
 
+				// Delay the next suspension.
+				let mut inhibitor = inhibit(&system);
+
+				// Watch for PrepareForSleep events from SystemD.
 				dbus!(watch system, "path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'").unwrap();
 
 				for item in system.iter(1_000_000_000) {
 					if let dbus::ConnectionItem::Signal(m) = item {
-						match (&*m.interface().unwrap(), &*m.member().unwrap()) {
-							("org.freedesktop.login1.Manager", "PrepareForSleep") => {
+						match (&*m.path().unwrap(), &*m.interface().unwrap(), &*m.member().unwrap()) {
+							("/org/freedesktop/login1", "org.freedesktop.login1.Manager", "PrepareForSleep") => {
 								if let Some(preparing) = m.get1() {
 									sender.send(Request::PrepareForSleep(
 										if preparing { Some(SystemTime::now()) } else { None })).unwrap();
 
+									// In case the system is suspending, unlock the suspension,
+									// otherwise delay the next.
 									if preparing {
 										inhibitor.take();
 									}
 									else {
-										inhibitor = block(&system);
+										inhibitor = inhibit(&system);
 									}
 								}
 							}
@@ -269,6 +275,7 @@ impl Interface {
 				dbus!(register session, "meh.rust.ScreenSaver");
 				dbus!(ready);
 
+				// GNOME screensaver signals.
 				let active = Arc::new(f.signal("ActiveChanged").sarg::<bool, _>("status"));
 				let idle   = Arc::new(f.signal("SessionIdleChanged").sarg::<bool, _>("status"));
 				let begin  = Arc::new(f.signal("AuthenticationRequestBegin"));
