@@ -142,6 +142,7 @@ pub enum Signal {
 }
 
 impl Interface {
+	/// Send a reload request.
 	pub fn reload<P: AsRef<Path>>(path: Option<P>) -> error::Result<()> {
 		let mut message = dbus::Message::new_method_call(
 				"meh.rust.ScreenSaver",
@@ -159,6 +160,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send a lock request.
 	pub fn lock() -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
@@ -170,6 +172,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send an activation request.
 	pub fn activate() -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
@@ -182,6 +185,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send a deactivation request.
 	pub fn deactivate() -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
@@ -193,6 +197,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send an inhibition request.
 	pub fn inhibit() -> error::Result<u32> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send_with_reply_and_block(dbus::Message::new_method_call(
@@ -206,6 +211,7 @@ impl Interface {
 			.ok_or(dbus::Error::new_custom("inibhition", "wrong response").into())
 	}
 
+	/// Send an uninhibition request.
 	pub fn uninhibit(cookie: u32) -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
@@ -218,6 +224,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send a throttle request.
 	pub fn throttle() -> error::Result<u32> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send_with_reply_and_block(dbus::Message::new_method_call(
@@ -231,6 +238,7 @@ impl Interface {
 			.ok_or(dbus::Error::new_custom("throttle", "wrong response").into())
 	}
 
+	/// Send an unthrottle request.
 	pub fn unthrottle(cookie: u32) -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
@@ -243,6 +251,7 @@ impl Interface {
 		Ok(())
 	}
 
+	/// Send a suspension request.
 	pub fn suspend() -> error::Result<u32> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send_with_reply_and_block(dbus::Message::new_method_call(
@@ -256,6 +265,7 @@ impl Interface {
 			.ok_or(dbus::Error::new_custom("suspend", "wrong response").into())
 	}
 
+	/// Send a resume request.
 	pub fn resume(cookie: u32) -> error::Result<()> {
 		dbus::Connection::get_private(dbus::BusType::Session)?
 			.send(dbus::Message::new_method_call(
