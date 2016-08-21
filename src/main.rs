@@ -132,34 +132,34 @@ fn main() {
 
 	exit(match matches.subcommand() {
 		("reload", Some(submatches)) =>
-			reload(submatches),
+			Interface::reload(submatches.value_of("config")),
 
-		("lock", Some(submatches)) =>
-			lock(submatches),
+		("lock", Some(_)) =>
+			Interface::lock(),
 
-		("activate", Some(submatches)) =>
-			activate(submatches),
+		("activate", Some(_)) =>
+			Interface::activate(),
 
-		("deactivate", Some(submatches)) =>
-			deactivate(submatches),
+		("deactivate", Some(_)) =>
+			Interface::deactivate(),
 
-		("inhibit", Some(submatches)) =>
-			inhibit(submatches),
+		("inhibit", Some(_)) =>
+			Interface::inhibit().map(|v| println!("{}", v)),
 
 		("uninhibit", Some(submatches)) =>
-			uninhibit(submatches),
+			Interface::uninhibit(submatches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()),
 
-		("throttle", Some(submatches)) =>
-			throttle(submatches),
+		("throttle", Some(_)) =>
+			Interface::throttle().map(|v| println!("{}", v)),
 
 		("unthrottle", Some(submatches)) =>
-			unthrottle(submatches),
+			Interface::unthrottle(submatches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()),
 
-		("suspend", Some(submatches)) =>
-			suspend(submatches),
+		("suspend", Some(_)) =>
+			Interface::suspend().map(|v| println!("{}", v)),
 
 		("resume", Some(submatches)) =>
-			resume(submatches),
+			Interface::resume(submatches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()),
 
 		("preview", Some(submatches)) =>
 			preview(submatches),
@@ -206,138 +206,6 @@ fn exit<T>(value: error::Result<T>) -> T {
 				error!(255, err),
 		}
 	}
-}
-
-fn reload(matches: &ArgMatches) -> error::Result<()> {
-	let mut message = dbus::Message::new_method_call(
-			"meh.rust.ScreenSaver",
-			"/meh/rust/ScreenSaver",
-			"meh.rust.ScreenSaver",
-			"Reload")?;
-
-	if let Some(value) = matches.value_of("config") {
-		message = message.append1(value);
-	}
-
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(message)?;
-
-	Ok(())
-}
-
-fn lock(_matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"Lock")?)?;
-
-	Ok(())
-}
-
-fn activate(_matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"SetActive")?
-				.append1(true))?;
-
-	Ok(())
-}
-
-fn deactivate(_matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"SimulateUserActivity")?)?;
-
-	Ok(())
-}
-
-fn inhibit(_matches: &ArgMatches) -> error::Result<()> {
-	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
-		.send_with_reply_and_block(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"Inhibit")?
-				.append2("screenruster", "requested by user")
-			, 5_000)?;
-
-	println!("{}", reply.get1::<u32>().unwrap());
-
-	Ok(())
-}
-
-fn uninhibit(matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"UnInhibit")?
-				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
-
-	Ok(())
-}
-
-fn throttle(_matches: &ArgMatches) -> error::Result<()> {
-	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
-		.send_with_reply_and_block(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"Throttle")?
-				.append2("screenruster", "requested by user")
-			, 5_000)?;
-
-	println!("{}", reply.get1::<u32>().unwrap());
-
-	Ok(())
-}
-
-fn unthrottle(matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"org.gnome.ScreenSaver",
-			"/org/gnome/ScreenSaver",
-			"org.gnome.ScreenSaver",
-			"UnThrottle")?
-				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
-
-	Ok(())
-}
-
-fn suspend(_matches: &ArgMatches) -> error::Result<()> {
-	let reply = dbus::Connection::get_private(dbus::BusType::Session)?
-		.send_with_reply_and_block(dbus::Message::new_method_call(
-			"meh.rust.ScreenSaver",
-			"/meh/rust/ScreenSaver",
-			"meh.rust.ScreenSaver",
-			"Suspend")?
-				.append2("screenruster", "requested by user")
-			, 5_000)?;
-
-	println!("{}", reply.get1::<u32>().unwrap());
-
-	Ok(())
-}
-
-fn resume(matches: &ArgMatches) -> error::Result<()> {
-	dbus::Connection::get_private(dbus::BusType::Session)?
-		.send(dbus::Message::new_method_call(
-			"meh.rust.ScreenSaver",
-			"/meh/rust/ScreenSaver",
-			"meh.rust.ScreenSaver",
-			"Resume")?
-				.append1(matches.value_of("COOKIE").unwrap().parse::<u32>().unwrap()))?;
-
-	Ok(())
 }
 
 fn preview(matches: &ArgMatches) -> error::Result<()> {
