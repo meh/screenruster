@@ -42,10 +42,9 @@ impl Display {
 		let mut dpms    = display.get_extension_data(xcb::dpms::id());
 
 		if randr.is_some() {
-			let cookie = xcb::randr::query_version(&display, 1, 1);
-			let reply  = cookie.get_reply()?;
+			let version = xcb::randr::query_version(&display, 1, 1).get_reply()?;
 
-			if reply.major_version() < 1 || (reply.major_version() >= 1 && reply.minor_version() < 1) {
+			if version.major_version() < 1 || (version.major_version() >= 1 && version.minor_version() < 1) {
 				return Err(error::X::MissingExtension.into());
 			}
 		}
