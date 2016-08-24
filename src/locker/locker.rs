@@ -349,19 +349,23 @@ impl Locker {
 									match keyboard.symbol(event.detail() as xkb::Keycode) {
 										// Delete a character.
 										key::KEY_BackSpace => {
-											password.pop();
+											if !password.is_empty() {
+												password.pop();
 
-											for saver in saver!(list) {
-												saver.password(Password::Delete).unwrap();
+												for saver in saver!(list) {
+													saver.password(Password::Delete).unwrap();
+												}
 											}
 										}
 
 										// Clear the password.
 										key::KEY_Escape => {
-											password.clear();
+											if !password.is_empty() {
+												password.clear();
 
-											for saver in saver!(list) {
-												saver.password(Password::Reset).unwrap();
+												for saver in saver!(list) {
+													saver.password(Password::Reset).unwrap();
+												}
 											}
 										}
 
