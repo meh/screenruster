@@ -112,12 +112,12 @@ impl Keyboard {
 				let event = xcb::cast_event(event): &xcb::xkb::StateNotifyEvent;
 
 				self.state.update_mask(
-					event.baseMods() as xkb::ModMask,
-					event.latchedMods() as xkb::ModMask,
-					event.lockedMods() as xkb::ModMask,
-					event.baseGroup() as xkb::LayoutIndex,
-					event.latchedGroup() as xkb::LayoutIndex,
-					event.lockedGroup() as xkb::LayoutIndex);
+					event.base_mods() as xkb::ModMask,
+					event.latched_mods() as xkb::ModMask,
+					event.locked_mods() as xkb::ModMask,
+					event.base_group() as xkb::LayoutIndex,
+					event.latched_group() as xkb::LayoutIndex,
+					event.locked_group() as xkb::LayoutIndex);
 			}
 
 			_ => ()
