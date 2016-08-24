@@ -31,7 +31,7 @@ use api;
 use timer;
 use saver::{self, Saver, Safety, Password, Pointer};
 use super::{Display, Window};
-use platform::Keyboard;
+use platform::{self, Keyboard};
 
 pub struct Locker {
 	receiver: Receiver<Response>,
@@ -135,7 +135,7 @@ impl Locker {
 				);
 			}
 
-			let x = (***display).as_ref();
+			let x = platform::display::sink(&display);
 
 			loop {
 				select! {

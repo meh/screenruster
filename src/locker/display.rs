@@ -27,8 +27,8 @@ use platform;
 pub struct Display {
 	display: Arc<platform::Display>,
 
-	randr: Option<xcb::QueryExtensionData>,
-	dpms:  Option<xcb::QueryExtensionData>,
+	randr: bool,
+	dpms:  bool,
 }
 
 unsafe impl Send for Display { }
@@ -59,8 +59,8 @@ impl Display {
 		let display = Arc::new(Display {
 			display: display,
 
-			randr: randr,
-			dpms:  dpms,
+			randr: randr.is_some(),
+			dpms:  dpms.is_some(),
 		});
 
 		display.sanitize();
@@ -69,18 +69,28 @@ impl Display {
 	}
 
 	/// Get the XRandr extension data.
-	pub fn randr(&self) -> Option<&xcb::QueryExtensionData> {
-		self.randr.as_ref()
+	pub fn randr(&self) -> Option<xcb::QueryExtensionData> {
+		if self.randr {
+			Some(self.display.get_extension_data(xcb::randr::id()).unwrap())
+		}
+		else {
+			None
+		}
 	}
 
 	/// Get the DPMS extension data.
-	pub fn dpms(&self) -> Option<&xcb::QueryExtensionData> {
-		self.dpms.as_ref()
+	pub fn dpms(&self) -> Option<xcb::QueryExtensionData> {
+		if self.dpms {
+			Some(self.display.get_extension_data(xcb::dpms::id()).unwrap())
+		}
+		else {
+			None
+		}
 	}
 
 	/// Check if the monitor is powered on or not.
 	pub fn is_powered(&self) -> bool {
-		if self.dpms.is_none() {
+		if !self.dpms {
 			return true;
 		}
 
@@ -108,7 +118,7 @@ impl Display {
 
 	/// Turn the monitor on or off.
 	pub fn power(&self, value: bool) {
-		if self.dpms.is_none() || self.is_powered() == value {
+		if !self.dpms || self.is_powered() == value {
 			return;
 		}
 
@@ -124,7 +134,7 @@ impl Display {
 	/// Sanitize the display from bad X11 things.
 	pub fn sanitize(&self) {
 		// Reset DPMS settings to usable.
-		if self.dpms.is_some() {
+		if self.dpms {
 			xcb::dpms::set_timeouts(self, 0, 0, 0);
 			xcb::dpms::enable(self);
 		}

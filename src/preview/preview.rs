@@ -28,7 +28,7 @@ use config::Config;
 use saver::{self, Saver};
 use api::{self, Password, Pointer};
 use super::{Window};
-use platform::{Display, Keyboard};
+use platform::{self, Display, Keyboard};
 
 pub struct Preview {
 	receiver: Receiver<Response>,
@@ -64,7 +64,7 @@ impl Preview {
 		let (i_sender, receiver) = channel();
 
 		thread::spawn(move || {
-			let x = (*display).as_ref();
+			let x = platform::display::sink(&display);
 			let s = saver.take().unwrap();
 
 			loop {

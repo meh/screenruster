@@ -24,45 +24,25 @@ use std::sync::mpsc::{Receiver, sync_channel};
 use xcb;
 
 use error;
-use platform::Event;
 
 pub struct Display {
 	connection: xcb::Connection,
-	receiver:   Receiver<Event>,
 
 	screen: i32,
 	name:   String,
 }
 
-unsafe impl Send for Display { }
-unsafe impl Sync for Display { }
-
 impl Display {
 	pub fn open(name: Option<String>) -> error::Result<Arc<Display>> {
 		let name                 = name.or_else(|| env::var("DISPLAY").ok()).unwrap_or(":0.0".into());
 		let (connection, screen) = xcb::Connection::connect(Some(name.as_ref()))?;
-		let (sender, receiver)   = sync_channel(1);
 
-		let display = Arc::new(Display {
+		Ok(Arc::new(Display {
 			connection: connection,
-			receiver:   receiver,
 
 			screen: screen,
 			name:   name,
-		});
-
-		// Drain events into a channel.
-		{
-			let display = display.clone();
-
-			thread::spawn(move || {
-				while let Some(event) = display.wait_for_event() {
-					sender.send(Event(event)).unwrap();
-				}
-			});
-		}
-
-		Ok(display)
+		}))
 	}
 
 	pub fn screen(&self) -> i32 {
@@ -78,10 +58,18 @@ impl Display {
 	}
 }
 
-impl AsRef<Receiver<Event>> for Display {
-	fn as_ref(&self) -> &Receiver<Event> {
-		&self.receiver
-	}
+pub fn sink(display: &Arc<Display>) -> Receiver<xcb::GenericEvent> {
+	let (sender, receiver) = sync_channel(1);
+	let display            = display.clone();
+
+	// Drain events into a channel.
+	thread::spawn(move || {
+		while let Some(event) = display.wait_for_event() {
+			sender.send(event).unwrap();
+		}
+	});
+
+	receiver
 }
 
 impl Deref for Display {

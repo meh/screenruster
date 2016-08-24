@@ -28,12 +28,11 @@ use super::Display;
 /// Its job is to map X key events to proper symbols/strings based on the
 /// layout and mappings.
 pub struct Keyboard {
-	display:   Arc<Display>,
-	context:   xkb::Context,
-	device:    i32,
-	keymap:    xkb::Keymap,
-	state:     xkb::State,
-	extension: xcb::QueryExtensionData,
+	display: Arc<Display>,
+	context: xkb::Context,
+	device:  i32,
+	keymap:  xkb::Keymap,
+	state:   xkb::State,
 }
 
 unsafe impl Send for Keyboard { }
@@ -42,7 +41,7 @@ unsafe impl Sync for Keyboard { }
 impl Keyboard {
 	/// Create a keyboard for the given display.
 	pub fn new(display: Arc<Display>) -> error::Result<Keyboard> {
-		let extension = display.get_extension_data(xcb::xkb::id())
+		display.get_extension_data(xcb::xkb::id())
 			.ok_or(error::X::MissingExtension)?;
 
 		// Check the XKB extension version.
@@ -85,24 +84,27 @@ impl Keyboard {
 		let state   = xkb::x11::state_new_from_device(&keymap, &display, device);
 
 		Ok(Keyboard {
-			display:   display,
-			context:   context,
-			device:    device,
-			keymap:    keymap,
-			state:     state,
-			extension: extension,
+			display: display,
+			context: context,
+			device:  device,
+			keymap:  keymap,
+			state:   state,
 		})
+	}
+
+	pub fn extension(&self) -> xcb::QueryExtensionData {
+		self.display.get_extension_data(xcb::xkb::id()).unwrap()
 	}
 
 	/// Checks if an event belongs to the keyboard.
 	pub fn owns_event(&self, event: u8) -> bool {
-		event >= self.extension.first_event() &&
-		event < self.extension.first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY
+		event >= self.extension().first_event() &&
+		event < self.extension().first_event() + xcb::xkb::EXTENSION_DEVICE_NOTIFY
 	}
 
 	/// Handles an X event.
 	pub fn handle(&mut self, event: &xcb::GenericEvent) {
-		match event.response_type() - self.extension.first_event() {
+		match event.response_type() - self.extension().first_event() {
 			xcb::xkb::NEW_KEYBOARD_NOTIFY | xcb::xkb::MAP_NOTIFY => {
 				self.keymap = xkb::x11::keymap_new_from_device(&self.context, &self.display, self.device, xkb::KEYMAP_COMPILE_NO_FLAGS);
 				self.state  = xkb::x11::state_new_from_device(&self.keymap, &self.display, self.device);

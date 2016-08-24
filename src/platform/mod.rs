@@ -15,10 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-mod event;
-pub use self::event::Event;
-
-mod display;
+pub mod display;
 pub use self::display::Display;
 
 mod window;
