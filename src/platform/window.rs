@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use xcb;
 
-use error;
+use crate::error;
 use super::Display;
 
 pub struct Window {

@@ -21,9 +21,10 @@ use std::io::Read;
 use std::sync::{Arc, RwLock};
 
 use toml;
-use xdg;
+use log::error;
+use app_dirs::{AppInfo, AppDataType, app_root};
 
-use error;
+use crate::error;
 use super::{Locker, Interface, Timer, Auth, Saver};
 
 #[derive(Clone, Debug, Default)]
@@ -62,18 +63,29 @@ impl Config {
 			path
 		}
 		else {
-			xdg::BaseDirectories::with_prefix("screenruster").unwrap()
-				.place_config_file("config.toml").unwrap()
+			app_root(AppDataType::UserConfig,
+				&AppInfo { name: "cancer", author: "meh." })?.join("config.toml")
 		};
 
 		let table = if let Ok(mut file) = File::open(path) {
 			let mut content = String::new();
 			file.read_to_string(&mut content)?;
 
-			toml::Parser::new(&content).parse().ok_or(error::Error::Parse)?
+			match content.parse::<toml::Value>() {
+				Ok(table) => {
+					table.as_table().unwrap().clone()
+				}
+
+				Err(error) => {
+					error!("could not load configuration file");
+					error!("{:?}", error);
+
+					toml::value::Table::new()
+				}
+			}
 		}
 		else {
-			toml::Table::new()
+			toml::value::Table::new()
 		};
 
 		self.locker.load(&table);

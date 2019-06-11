@@ -16,19 +16,18 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::thread;
-use std::sync::mpsc::{Receiver, Sender, channel};
 use std::ops::Deref;
 
+use channel::{self, Receiver, Sender, select};
 use xcb;
-use xkbcommon::xkb;
-use xkbcommon::xkb::keysyms as key;
+use xkb::{self, key};
 
-use error;
-use config::Config;
-use saver::{self, Saver};
+use crate::error;
+use crate::config::Config;
+use crate::saver::{self, Saver};
 use api::{self, Password, Pointer};
 use super::{Window};
-use platform::{self, Display, Keyboard};
+use crate::platform::{self, Display, Keyboard};
 
 pub struct Preview {
 	receiver: Receiver<Response>,
@@ -42,13 +41,13 @@ pub enum Request {
 
 #[derive(Clone)]
 pub enum Response {
-	Done(Sender<Response>),
+	Done,
 }
 
 impl Preview {
 	pub fn spawn<T: AsRef<str>>(name: T, config: Config) -> error::Result<Preview> {
 		let     display  = Display::open(None)?;
-		let mut keyboard = Keyboard::new(display.clone())?;
+		let mut keyboard = Keyboard::new(display.clone(), None)?;
 		let     window   = Window::create(display.clone())?;
 		let mut saver    = Saver::spawn(name.as_ref())?;
 		let mut throttle = config.saver().throttle();
@@ -60,8 +59,8 @@ impl Preview {
 			saver.throttle(true).unwrap();
 		}
 
-		let (sender, i_receiver) = channel();
-		let (i_sender, receiver) = channel();
+		let (sender, i_receiver) = channel::unbounded();
+		let (i_sender, receiver) = channel::unbounded();
 
 		thread::spawn(move || {
 			let x = platform::display::sink(&display);
@@ -70,14 +69,14 @@ impl Preview {
 			loop {
 				select! {
 					// Handle control events.
-					event = receiver.recv() => {
-						match event.unwrap() {
+					recv(receiver) -> event => {
+						match event {
 							_ => ()
 						}
 					},
 
 					// Handle saver events.
-					event = s.recv() => {
+					recv(s) -> event => {
 						match event.unwrap() {
 							saver::Response::Forward(api::Response::Initialized) => {
 								saver.start().unwrap();
@@ -105,7 +104,7 @@ impl Preview {
 					},
 
 					// Handle X events.
-					event = x.recv() => {
+					recv(x) -> event => {
 						let event = event.unwrap();
 
 						match event.response_type() {
@@ -115,53 +114,53 @@ impl Preview {
 							}
 
 							xcb::CONFIGURE_NOTIFY => {
-								let event = xcb::cast_event(&event): &xcb::ConfigureNotifyEvent;
+								let event = unsafe { xcb::cast_event::<xcb::ConfigureNotifyEvent>(&event) };
 								saver.resize(event.width() as u32, event.height() as u32).unwrap();
 							}
 
 							// Handle keyboard input.
 							xcb::KEY_PRESS => {
-								let key = xcb::cast_event(&event): &xcb::KeyPressEvent;
+								let key = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
 
-								match keyboard.symbol(key.detail() as xkb::Keycode) {
+								match keyboard.symbol(key.detail().into()) {
 									// Toggle throttling.
-									key::KEY_t | key::KEY_T => {
+									Some(key::t) | Some(key::T) => {
 										throttle = !throttle;
 										saver.throttle(throttle).unwrap();
 									}
 
 									// Stop the preview.
-									key::KEY_q | key::KEY_Q => {
+									Some(key::q) | Some(key::Q) => {
 										saver.stop().unwrap();
 									}
 
 									// Test password insertion.
-									key::KEY_i | key::KEY_I => {
+									Some(key::i) | Some(key::I) => {
 										saver.password(Password::Insert).unwrap();
 									}
 
 									// Test password deletetion.
-									key::KEY_d | key::KEY_D => {
+									Some(key::d) | Some(key::D) => {
 										saver.password(Password::Delete).unwrap();
 									}
 
 									// Test passsword reset.
-									key::KEY_r | key::KEY_R => {
+									Some(key::r) | Some(key::R) => {
 										saver.password(Password::Reset).unwrap();
 									}
 
 									// Test password check.
-									key::KEY_c | key::KEY_C => {
+									Some(key::c) | Some(key::C) => {
 										saver.password(Password::Check).unwrap();
 									}
 
 									// Test password success.
-									key::KEY_s | key::KEY_S => {
+									Some(key::s) | Some(key::S) => {
 										saver.password(Password::Success).unwrap();
 									}
 
 									// Test password failure.
-									key::KEY_f | key::KEY_F => {
+									Some(key::f) | Some(key::F) => {
 										saver.password(Password::Failure).unwrap();
 									}
 
@@ -171,7 +170,7 @@ impl Preview {
 
 							// Handle mouse button presses.
 							xcb::BUTTON_PRESS | xcb::BUTTON_RELEASE => {
-								let event = xcb::cast_event(&event): &xcb::ButtonPressEvent;
+								let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
 
 								saver.pointer(Pointer::Button {
 									x: event.event_x() as i32,
@@ -184,7 +183,7 @@ impl Preview {
 
 							// Handle mouse motion.
 							xcb::MOTION_NOTIFY => {
-								let event = xcb::cast_event(&event): &xcb::MotionNotifyEvent;
+								let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
 
 								saver.pointer(Pointer::Move {
 									x: event.event_x() as i32,
@@ -198,7 +197,7 @@ impl Preview {
 				}
 			}
 
-			sender.send(Response::Done(sender.clone())).unwrap();
+			sender.send(Response::Done).unwrap();
 		});
 
 		Ok(Preview {

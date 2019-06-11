@@ -18,11 +18,11 @@
 use std::collections::{HashMap, HashSet};
 use std::thread;
 use std::ops::Deref;
-use std::sync::mpsc::{Receiver, Sender, SendError, channel};
 use std::time::{Instant, SystemTime, Duration};
+use channel::{self, Receiver, Sender, SendError};
 
-use error;
-use config;
+use crate::error;
+use crate::config;
 
 /// The timer manager.
 ///
@@ -137,8 +137,8 @@ pub enum Response {
 impl Timer {
 	/// Spawn the timer thread with the given configuration.
 	pub fn spawn(config: config::Timer) -> error::Result<Timer> {
-		let (sender, i_receiver) = channel();
-		let (i_sender, receiver) = channel();
+		let (sender, i_receiver) = channel::unbounded();
+		let (i_sender, receiver) = channel::unbounded();
 
 		thread::spawn(move || {
 			// Instant to check last heartbeat.
@@ -148,19 +148,19 @@ impl Timer {
 			let mut idle = Instant::now();
 
 			// Instant to check when the screen saver starter.
-			let mut started = None: Option<Instant>;
+			let mut started = None::<Instant>;
 
 			// Instant to check when the screen was locked.
-			let mut locked = None: Option<Instant>;
+			let mut locked = None::<Instant>;
 
 			// Instant to check when the screen was blanked.
-			let mut blanked = None: Option<Instant>;
+			let mut blanked = None::<Instant>;
 
 			// Instant to check when the screen was unblanked.
-			let mut unblanked = None: Option<Instant>;
+			let mut unblanked = None::<Instant>;
 
 			// Instant to check when the timer was suspended.
-			let mut suspended = None: Option<SystemTime>;
+			let mut suspended = None::<SystemTime>;
 
 			// Time correction for suspension.
 			let mut correction = 0;
@@ -169,7 +169,7 @@ impl Timer {
 			let mut corrected = false;
 
 			// The registered timeouts.
-			let mut timeouts = HashMap::new(): HashMap<u64, (Instant, u64)>;
+			let mut timeouts = HashMap::<u64, (Instant, u64)>::new();
 
 			loop {
 				thread::sleep(Duration::from_secs(1));
@@ -253,7 +253,7 @@ impl Timer {
 					}
 
 					for &id in &expired {
-						sender.send(Response::Timeout { id: id }).unwrap();
+						sender.send(Response::Timeout { id }).unwrap();
 						timeouts.remove(&id);
 					}
 				}

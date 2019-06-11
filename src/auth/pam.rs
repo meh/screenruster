@@ -20,18 +20,20 @@ use std::ptr;
 use std::ffi::{CStr, CString};
 
 use toml;
-use pam;
+use log::{info, error};
+use pam::types::*;
+use pam::raw::*;
 use libc::{c_char, c_int, c_void, size_t};
 use libc::{calloc, free, strdup};
 
-use error;
+use crate::error;
 use super::Authenticate;
 
 pub struct Auth {
 	accounts: bool,
 }
 
-pub fn new(_config: toml::Table) -> error::Result<Auth> {
+pub fn new(_config: toml::value::Table) -> error::Result<Auth> {
 	Ok(Auth {
 		accounts: cfg!(feature = "auth-pam-accounts"),
 	})
@@ -48,16 +50,16 @@ impl Authenticate for Auth {
 		let password = CString::new(password)?;
 
 		unsafe {
-			let mut handle = mem::uninitialized();
-			let     conv   = pam::PamConversation {
+			let mut handle = mem::uninitialized::<*mut PamHandle>();
+			let     conv   = PamConversation {
 				conv:     Some(conversation),
 				data_ptr: &Info { user: user.as_ptr(), password: password.as_ptr() } as *const _ as *mut _,
 			};
 
 			macro_rules! pam {
 				(check $body:expr) => (
-					match $body {
-						pam::PamReturnCode::SUCCESS =>
+					match $body.into() {
+						PamReturnCode::SUCCESS =>
 							Ok(()),
 
 						error =>
@@ -66,35 +68,35 @@ impl Authenticate for Auth {
 				);
 
 				(checked $body:expr) => (
-					match $body {
-						pam::PamReturnCode::SUCCESS =>
+					match $body.into() {
+						PamReturnCode::SUCCESS =>
 							Ok(()),
 
 						error => {
-							pam::end(handle, error);
+							pam_end(&mut *handle, error as i32);
 							Err(error::auth::Pam(error))
 						}
 					}
 				);
 
 				(start) => (
-					pam!(check pam::start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, &mut handle))
+					pam!(check pam_start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, &mut handle as *mut *mut _ as *mut *const _))
 				);
 
 				(set_item $ty:ident => $value:expr) => (
-					pam!(checked pam::set_item(handle, pam::PamItemType::$ty, strdup($value.as_ptr() as *const _) as *mut _))
+					pam!(checked pam_set_item(&mut *handle, PamItemType::$ty as i32, strdup($value.as_ptr() as *const _) as *mut _))
 				);
 
 				(authenticate) => (
-					pam!(checked pam::authenticate(handle, pam::PamFlag::NONE))
+					pam!(checked pam_authenticate(&mut *handle, PamFlag::NONE as i32))
 				);
 
 				(end) => (
-					pam::end(handle, pam::PamReturnCode::SUCCESS);
+					pam_end(&mut *handle, PamReturnCode::SUCCESS as i32);
 				);
 
 				($name:ident $flag:ident) => (
-					pam!(checked pam::$name(handle, pam::PamFlag::$flag))
+					pam!(checked concat_idents!(pam_, $name)(&mut *handle, PamFlag::$flag as i32))
 				);
 
 				($name:ident) => (
@@ -125,40 +127,40 @@ impl Authenticate for Auth {
 	}
 }
 
-extern "C" fn conversation(count: c_int, messages: *mut *mut pam::PamMessage, responses: *mut *mut pam::PamResponse, data: *mut c_void) -> c_int {
+extern "C" fn conversation(count: c_int, messages: *mut *mut PamMessage, responses: *mut *mut PamResponse, data: *mut c_void) -> c_int {
 	unsafe {
 		let     info   = &*(data as *mut Info as *const Info);
-		let mut result = pam::PamReturnCode::SUCCESS;
+		let mut result = PamReturnCode::SUCCESS;
 
-		*responses = calloc(count as size_t, mem::size_of::<pam::PamResponse>() as size_t).as_mut().unwrap() as *mut _ as *mut _;
+		*responses = calloc(count as size_t, mem::size_of::<PamResponse>() as size_t).as_mut().unwrap() as *mut _ as *mut _;
 
 		for i in 0 .. count as isize {
 			let message  = &**messages.offset(i);
 			let response = &mut *((*responses).offset(i));
 
-			match pam::PamMessageStyle::from(message.msg_style) {
+			match PamMessageStyle::from(message.msg_style) {
 				// Probably the username, since it wants us to echo it.
-				pam::PamMessageStyle::PROMPT_ECHO_ON => {
+				PamMessageStyle::PROMPT_ECHO_ON => {
 					response.resp = strdup(info.user);
 				}
 
 				// Probably the password, since it doesn't want us to echo it.
-				pam::PamMessageStyle::PROMPT_ECHO_OFF => {
+				PamMessageStyle::PROMPT_ECHO_OFF => {
 					response.resp = strdup(info.password);
 				}
 
-				pam::PamMessageStyle::ERROR_MSG => {
-					result = pam::PamReturnCode::CONV_ERR;
+				PamMessageStyle::ERROR_MSG => {
+					result = PamReturnCode::CONV_ERR;
 					error!("{}", String::from_utf8_lossy(CStr::from_ptr(message.msg).to_bytes()));
 				}
 
-				pam::PamMessageStyle::TEXT_INFO => {
+				PamMessageStyle::TEXT_INFO => {
 					info!("{}", String::from_utf8_lossy(CStr::from_ptr(message.msg).to_bytes()));
 				}
 			}
 		}
 
-		if result != pam::PamReturnCode::SUCCESS {
+		if result != PamReturnCode::SUCCESS {
 			free(*responses as *mut _);
 		}
 

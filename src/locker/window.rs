@@ -21,10 +21,11 @@ use std::time::Duration;
 use std::ops::Deref;
 
 use xcb;
+use log::warn;
 
-use error;
+use crate::error;
 use super::Display;
-use platform;
+use crate::platform;
 
 pub struct Window {
 	display: Arc<Display>,

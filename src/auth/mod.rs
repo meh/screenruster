@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-use error;
+use crate::error;
 
 pub trait Authenticate: Send + 'static {
 	fn authenticate(&mut self, user: &str, password: &str) -> error::Result<bool>;

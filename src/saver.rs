@@ -20,14 +20,14 @@ use std::process::{self, Child, Command, Stdio};
 use std::ops::Deref;
 use std::thread;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{Receiver, TryRecvError, Sender, SendError, channel};
+use channel::{self, Receiver, TryRecvError, Sender, SendError};
 
 use toml;
-use log;
-use api::{self, json};
+use log::{log_enabled};
+use api::{self, json::{self, object}};
 pub use api::{Safety, Password, Pointer};
 
-use error;
+use crate::error;
 
 /// Interaction with an external process that implements the ScreenRuster IPC.
 ///
@@ -60,7 +60,6 @@ pub enum Response {
 #[derive(Debug)]
 pub struct Exit {
 	status: process::ExitStatus,
-	sender: Sender<Response>,
 }
 
 impl Deref for Exit {
@@ -78,8 +77,8 @@ impl Saver {
 			.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
 			.spawn()?));
 
-		let (sender, i_receiver) = channel();
-		let (i_sender, receiver) = channel();
+		let (sender, i_receiver) = channel::unbounded();
+		let (i_sender, receiver) = channel::unbounded();
 
 		// Read from the process stdout, decode the responses from JSON and send
 		// them through the channel.
@@ -130,7 +129,6 @@ impl Saver {
 				let mut child = child.lock().unwrap();
 				sender.send(Response::Exit(Exit {
 					status: child.wait().unwrap(),
-					sender: sender.clone()
 				})).unwrap()
 			});
 		}
@@ -246,7 +244,7 @@ impl Saver {
 						break;
 					}
 
-					if log_enabled!(log::LogLevel::Debug) {
+					if log_enabled!(log::Level::Debug) {
 						writeln!(&mut io::stderr(), "{}", line.unwrap()).unwrap();
 					}
 				}
@@ -309,11 +307,14 @@ impl Saver {
 	}
 
 	/// Configure the saver.
-	pub fn config(&mut self, config: toml::Table) -> Result<(), SendError<Request>> {
+	pub fn config(&mut self, config: toml::value::Table) -> Result<(), SendError<Request>> {
 		fn convert(value: &toml::Value) -> json::JsonValue {
 			match *value {
-				toml::Value::String(ref value) | toml::Value::Datetime(ref value) =>
+				toml::Value::String(ref value) =>
 					value.clone().into(),
+					
+				toml::Value::Datetime(ref value) =>
+					value.to_string().into(),
 
 				toml::Value::Integer(value) =>
 					value.into(),
@@ -328,7 +329,11 @@ impl Saver {
 					json::JsonValue::Array(value.iter().map(|v| convert(v)).collect()),
 
 				toml::Value::Table(ref value) =>
-					json::JsonValue::Object(value.iter().map(|(k, v)| (k.clone(), convert(v))).collect()),
+					json::JsonValue::Object(value.iter().fold(json::object::Object::new(),
+						|mut acc, (key, value)| {
+							acc.insert(key, convert(value));
+							acc
+						}))
 			}
 		}
 
@@ -341,9 +346,9 @@ impl Saver {
 	}
 
 	/// Select the rendering target for the saver.
-	pub fn target<S: AsRef<str>>(&mut self, display: S, screen: i32, window: u64) -> Result<(), SendError<Request>> {
+	pub fn target<'a, D: Into<Option<&'a str>>>(&mut self, display: D, screen: i32, window: u64) -> Result<(), SendError<Request>> {
 		self.send(api::Request::Target {
-			display: display.as_ref().into(),
+			display: display.into().map(String::from),
 			screen:  screen,
 			window:  window,
 		})

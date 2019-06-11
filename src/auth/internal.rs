@@ -24,7 +24,7 @@ pub struct Auth {
 	password: String,
 }
 
-pub fn new(config: toml::Table) -> error::Result<Auth> {
+pub fn new(config: toml::value::Table) -> error::Result<Auth> {
 	Ok(Auth {
 		password: config.get("password")
 			.and_then(|v| v.as_str())

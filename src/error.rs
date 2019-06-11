@@ -23,6 +23,7 @@ use std::ffi;
 use xcb;
 use dbus;
 use clap;
+use app_dirs;
 
 pub type Result<T> = ::std::result::Result<T, Error>;
 
@@ -37,6 +38,7 @@ pub enum Error {
 	X(X),
 	DBus(DBus),
 	Cli(clap::Error),
+	Directory(app_dirs::AppDirsError),
 	Grab(Grab),
 	Auth(Auth),
 }
@@ -147,6 +149,12 @@ impl From<DBus> for Error {
 	}
 }
 
+impl From<app_dirs::AppDirsError> for Error {
+	fn from(value: app_dirs::AppDirsError) -> Self {
+		Error::Directory(value)
+	}
+}
+
 impl From<Grab> for Error {
 	fn from(value: Grab) -> Self {
 		Error::Grab(value)
@@ -217,6 +225,9 @@ impl error::Error for Error {
 			},
 
 			Error::Cli(ref err) =>
+				err.description(),
+
+			Error::Directory(ref err) =>
 				err.description(),
 
 			Error::Grab(ref err) => match *err {

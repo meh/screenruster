@@ -18,20 +18,19 @@
 use std::collections::HashMap;
 use std::thread;
 use std::ops::Deref;
-use std::sync::mpsc::{Receiver, Sender, SendError, channel};
+use channel::{self, Receiver, Sender, SendError, select};
 
 use rand::{self, Rng};
 use xcb;
-use xkbcommon::xkb;
-use xkbcommon::xkb::keysyms as key;
+use xkb::{self, key};
 
-use error;
-use config::Config;
-use api;
-use timer;
-use saver::{self, Saver, Safety, Password, Pointer};
+use crate::error;
+use crate::config::Config;
+use crate::timer;
+use crate::saver::{self, Saver, Safety, Password, Pointer};
 use super::{Display, Window};
-use platform::{self, Keyboard};
+use crate::platform::{self, Keyboard};
+use api;
 
 pub struct Locker {
 	receiver: Receiver<Response>,
@@ -63,22 +62,22 @@ pub enum Response {
 impl Locker {
 	pub fn spawn(config: Config) -> error::Result<Locker> {
 		let     display  = Display::open(config.locker())?;
-		let mut keyboard = Keyboard::new((*display).clone())?;
-		let mut windows  = HashMap::new(): HashMap<u32, Window>;
-		let mut savers   = HashMap::new(): HashMap<u32, Saver>;
+		let mut keyboard = Keyboard::new((*display).clone(), None)?;
+		let mut windows  = HashMap::<u32, Window>::new();
+		let mut savers   = HashMap::<u32, Saver>::new();
 		let mut checking = false;
 		let mut password = String::new();
 
 		for screen in 0 .. display.screens() {
 			let window = Window::create(display.clone(), screen as i32)?;
 
-			display.observe(window.root());
+			display.observe(window.root()).unwrap();
 			windows.insert(window.id(), window);
 		}
 
-		let (sender,   i_receiver)   = channel();
-		let (i_sender, receiver)   = channel();
-		let (s_sender, s_receiver) = channel();
+		let (sender,   i_receiver) = channel::unbounded();
+		let (i_sender, receiver)   = channel::unbounded();
+		let (s_sender, s_receiver) = channel::unbounded();
 
 		thread::spawn(move || {
 			macro_rules! window {
@@ -140,7 +139,7 @@ impl Locker {
 			loop {
 				select! {
 					// Handle control events.
-					event = receiver.recv() => {
+					recv(receiver) -> event => {
 						match event.unwrap() {
 							Request::Timeout { id } => {
 								if let Some(saver) = saver!(? id as u32) {
@@ -260,7 +259,7 @@ impl Locker {
 					},
 
 					// Handle saver events.
-					event = s_receiver.recv() => {
+					recv(s_receiver) -> event => {
 						let (id, event) = event.unwrap();
 
 						match event {
@@ -308,13 +307,13 @@ impl Locker {
 					},
 
 					// Handle X events.
-					event = x.recv() => {
+					recv(x) -> event => {
 						let event = event.unwrap();
 
 						match event.response_type() {
 							// Handle screen changes.
 							e if display.randr().map_or(false, |rr| e == rr.first_event() + xcb::randr::SCREEN_CHANGE_NOTIFY) => {
-								let event = xcb::cast_event(&event): &xcb::randr::ScreenChangeNotifyEvent;
+								let event = unsafe { xcb::cast_event::<xcb::randr::ScreenChangeNotifyEvent>(&event) };
 
 								for window in window!(list) {
 									if window.root() == event.root() {
@@ -344,11 +343,11 @@ impl Locker {
 									continue;
 								}
 
-								let event = xcb::cast_event(&event): &xcb::KeyPressEvent;
-								if let Some(_window) = windows.values().find(|w| w.id() == event.event()) {
-									match keyboard.symbol(event.detail() as xkb::Keycode) {
+								let event = unsafe { xcb::cast_event::<xcb::KeyPressEvent>(&event) };
+								if windows.values().find(|w| w.id() == event.event()).is_some() {
+									match keyboard.symbol(event.detail().into()) {
 										// Delete a character.
-										key::KEY_BackSpace => {
+										Some(key::BackSpace) => {
 											if !password.is_empty() {
 												password.pop();
 
@@ -359,7 +358,7 @@ impl Locker {
 										}
 
 										// Clear the password.
-										key::KEY_Escape => {
+										Some(key::Escape) => {
 											if !password.is_empty() {
 												password.clear();
 
@@ -370,7 +369,7 @@ impl Locker {
 										}
 
 										// Check authentication.
-										key::KEY_Return => {
+										Some(key::Return) => {
 											for saver in saver!(list) {
 												saver.password(Password::Check).unwrap();
 											}
@@ -386,11 +385,13 @@ impl Locker {
 											// pressed is not going to OOM us in the extremely long
 											// run.
 											if password.len() <= 255 {
-												for ch in keyboard.string(event.detail() as xkb::Keycode).chars() {
-													password.push(ch);
+												if let Some(string) = keyboard.string(event.detail().into()) {
+													for ch in string.chars() {
+														password.push(ch);
 
-													for saver in saver!(list) {
-														saver.password(Password::Insert).unwrap();
+														for saver in saver!(list) {
+															saver.password(Password::Insert).unwrap();
+														}
 													}
 												}
 											}
@@ -407,7 +408,7 @@ impl Locker {
 							xcb::BUTTON_PRESS | xcb::BUTTON_RELEASE => {
 								sender.send(Response::Activity).unwrap();
 
-								let event = xcb::cast_event(&event): &xcb::ButtonPressEvent;
+								let event = unsafe { xcb::cast_event::<xcb::ButtonPressEvent>(&event) };
 								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
 									if let Some(saver) = saver!(? window.id()) {
 										saver.pointer(Pointer::Button {
@@ -425,7 +426,7 @@ impl Locker {
 							xcb::MOTION_NOTIFY => {
 								sender.send(Response::Activity).unwrap();
 
-								let event = xcb::cast_event(&event): &xcb::MotionNotifyEvent;
+								let event = unsafe { xcb::cast_event::<xcb::MotionNotifyEvent>(&event) };
 								if let Some(window) = windows.values().find(|w| w.id() == event.event()) {
 									if let Some(saver) = saver!(? window.id()) {
 										saver.pointer(Pointer::Move {
@@ -438,8 +439,8 @@ impl Locker {
 
 							// On window changes, try to observe the window.
 							xcb::MAP_NOTIFY | xcb::CONFIGURE_NOTIFY => {
-								let event = xcb::cast_event(&event): &xcb::MapNotifyEvent;
-								display.observe(event.window());
+								let event = unsafe { xcb::cast_event::<xcb::MapNotifyEvent>(&event) };
+								display.observe(event.window()).unwrap();
 							}
 
 							_ => ()

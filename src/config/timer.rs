@@ -42,7 +42,7 @@ impl Default for Data {
 }
 
 impl Timer {
-	pub fn load(&self, table: &toml::Table) {
+	pub fn load(&self, table: &toml::value::Table) {
 		if let Some(table) = table.get("timer").and_then(|v| v.as_table()) {
 			if let Some(value) = super::seconds(table.get("beat")) {
 				self.0.write().unwrap().beat = value;

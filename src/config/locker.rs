@@ -44,7 +44,7 @@ impl Default for Data {
 }
 
 impl Locker {
-	pub fn load(&self, table: &toml::Table) {
+	pub fn load(&self, table: &toml::value::Table) {
 		if let Some(table) = table.get("locker").and_then(|v| v.as_table()) {
 			if let Some(value) = table.get("display").and_then(|v| v.as_str()) {
 				self.0.write().unwrap().display = Some(value.into());

@@ -16,11 +16,12 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
+use std::env;
 
 use xcb;
-use xkbcommon::xkb;
+use xkb;
 
-use error;
+use crate::error;
 use super::Display;
 
 /// Keyboard manager and handler.
@@ -33,6 +34,9 @@ pub struct Keyboard {
 	device:  i32,
 	keymap:  xkb::Keymap,
 	state:   xkb::State,
+	#[allow(dead_code)]
+	table:   xkb::compose::Table,
+	compose: xkb::compose::State,
 }
 
 unsafe impl Send for Keyboard { }
@@ -40,7 +44,7 @@ unsafe impl Sync for Keyboard { }
 
 impl Keyboard {
 	/// Create a keyboard for the given display.
-	pub fn new(display: Arc<Display>) -> error::Result<Keyboard> {
+	pub fn new(display: Arc<Display>, locale: Option<&str>) -> error::Result<Keyboard> {
 		display.get_extension_data(xcb::xkb::id())
 			.ok_or(error::X::MissingExtension)?;
 
@@ -78,20 +82,29 @@ impl Keyboard {
 				map as u16, map as u16, None).request_check()?;
 		}
 
-		let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
-		let device  = xkb::x11::get_core_keyboard_device_id(&display);
-		let keymap  = xkb::x11::keymap_new_from_device(&context, &display, device, xkb::KEYMAP_COMPILE_NO_FLAGS);
-		let state   = xkb::x11::state_new_from_device(&keymap, &display, device);
+		let context = xkb::Context::default();
+		let device  = xkb::x11::device(&display)?;
+		let keymap  = xkb::x11::keymap(&display, device, &context, Default::default())?;
+		let state   = xkb::x11::state(&display, device, &keymap)?;
 
-		Ok(Keyboard {
-			display: display,
-			context: context,
-			device:  device,
-			keymap:  keymap,
-			state:   state,
-		})
+		let (table, compose) = {
+			let     locale = locale.map(String::from).or(env::var("LANG").ok()).unwrap_or("C".into());
+			let mut table  = if let Ok(table) = xkb::compose::Table::new(&context, &locale, Default::default()) {
+				table
+			}
+			else {
+				xkb::compose::Table::new(&context, "C", Default::default()).unwrap()
+			};
+
+			let state = table.state(Default::default());
+
+			(table, state)
+		};
+
+		Ok(Keyboard { display, context, device, keymap, state, table, compose })
 	}
 
+	/// Get the extension data.
 	pub fn extension(&self) -> xcb::QueryExtensionData {
 		self.display.get_extension_data(xcb::xkb::id()).unwrap()
 	}
@@ -106,20 +119,20 @@ impl Keyboard {
 	pub fn handle(&mut self, event: &xcb::GenericEvent) {
 		match event.response_type() - self.extension().first_event() {
 			xcb::xkb::NEW_KEYBOARD_NOTIFY | xcb::xkb::MAP_NOTIFY => {
-				self.keymap = xkb::x11::keymap_new_from_device(&self.context, &self.display, self.device, xkb::KEYMAP_COMPILE_NO_FLAGS);
-				self.state  = xkb::x11::state_new_from_device(&self.keymap, &self.display, self.device);
+				self.keymap = xkb::x11::keymap(&self.display, self.device, &self.context, Default::default()).unwrap();
+				self.state  = xkb::x11::state(&self.display, self.device, &self.keymap).unwrap();
 			}
 
 			xcb::xkb::STATE_NOTIFY => {
-				let event = xcb::cast_event(event): &xcb::xkb::StateNotifyEvent;
+				let event = unsafe { xcb::cast_event::<xcb::xkb::StateNotifyEvent>(event) };
 
-				self.state.update_mask(
-					event.base_mods() as xkb::ModMask,
-					event.latched_mods() as xkb::ModMask,
-					event.locked_mods() as xkb::ModMask,
-					event.base_group() as xkb::LayoutIndex,
-					event.latched_group() as xkb::LayoutIndex,
-					event.locked_group() as xkb::LayoutIndex);
+				self.state.update().mask(
+					event.base_mods(),
+					event.latched_mods(),
+					event.locked_mods(),
+					event.base_group(),
+					event.latched_group(),
+					event.locked_group());
 			}
 
 			_ => ()
@@ -127,12 +140,12 @@ impl Keyboard {
 	}
 
 	/// Translate a key code to the key symbol.
-	pub fn symbol(&self, code: xkb::Keycode) -> xkb::Keysym {
-		self.state.key_get_one_sym(code)
+	pub fn symbol(&self, code: u8) -> Option<xkb::Keysym> {
+		self.state.key(code).sym()
 	}
 
 	/// Translate a key code to an UTF-8 string.
-	pub fn string(&self, code: xkb::Keycode) -> String {
-		self.state.key_get_utf8(code)
+	pub fn string(&self, code: u8) -> Option<String> {
+		self.state.key(code).utf8()
 	}
 }

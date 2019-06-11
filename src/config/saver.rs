@@ -28,7 +28,7 @@ pub(super) struct Data {
 	pub throttle: bool,
 
 	pub using: Vec<String>,
-	pub table: toml::Table,
+	pub table: toml::value::Table,
 }
 
 impl Default for Data {
@@ -44,7 +44,7 @@ impl Default for Data {
 }
 
 impl Saver {
-	pub fn load(&self, table: &toml::Table) {
+	pub fn load(&self, table: &toml::value::Table) {
 		if let Some(table) = table.get("saver").and_then(|v| v.as_table()) {
 			if let Some(value) = super::seconds(table.get("timeout")) {
 				self.0.write().unwrap().timeout = value;
@@ -54,7 +54,7 @@ impl Saver {
 				self.0.write().unwrap().throttle = value;
 			}
 
-			if let Some(value) = table.get("use").and_then(|v| v.as_slice()) {
+			if let Some(value) = table.get("use").and_then(|v| v.as_array()) {
 				self.0.write().unwrap().using = value.iter()
 					.filter(|v| v.as_str().is_some())
 					.map(|v| v.as_str().unwrap().into())
@@ -81,7 +81,7 @@ impl Saver {
 	}
 
 	/// Get the configuration for a specific saver.
-	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
+	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::value::Table {
 		self.0.read().unwrap().table.get(name.as_ref())
 			.and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}

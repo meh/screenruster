@@ -16,32 +16,29 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
-use std::env;
 use std::ops::Deref;
 use std::thread;
-use std::sync::mpsc::{Receiver, sync_channel};
+use channel;
 
 use xcb;
+use xcbu::ewmh;
 
-use error;
+use crate::error;
 
 pub struct Display {
-	connection: xcb::Connection,
+	connection: ewmh::Connection,
 
 	screen: i32,
-	name:   String,
+	name:   Option<String>,
 }
 
 impl Display {
 	pub fn open(name: Option<String>) -> error::Result<Arc<Display>> {
-		let name                 = name.or_else(|| env::var("DISPLAY").ok()).unwrap_or(":0.0".into());
-		let (connection, screen) = xcb::Connection::connect(Some(name.as_ref()))?;
+		let (connection, screen) = xcb::Connection::connect(name.as_ref().map(AsRef::as_ref))?;
+		let connection           = ewmh::Connection::connect(connection).map_err(|(e, _)| e)?;
 
 		Ok(Arc::new(Display {
-			connection: connection,
-
-			screen: screen,
-			name:   name,
+			connection, screen, name
 		}))
 	}
 
@@ -49,8 +46,8 @@ impl Display {
 		self.screen
 	}
 
-	pub fn name(&self) -> &str {
-		&self.name
+	pub fn name(&self) -> Option<&str> {
+		self.name.as_ref().map(AsRef::as_ref)
 	}
 
 	pub fn screens(&self) -> u8 {
@@ -58,8 +55,8 @@ impl Display {
 	}
 }
 
-pub fn sink(display: &Arc<Display>) -> Receiver<xcb::GenericEvent> {
-	let (sender, receiver) = sync_channel(1);
+pub fn sink(display: &Arc<Display>) -> channel::Receiver<xcb::GenericEvent> {
+	let (sender, receiver) = channel::bounded(1);
 	let display            = display.clone();
 
 	// Drain events into a channel.

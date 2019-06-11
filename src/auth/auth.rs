@@ -17,12 +17,13 @@
 
 use std::thread;
 use std::ops::Deref;
-use std::sync::mpsc::{Receiver, Sender, SendError, channel};
+use channel::{self, Receiver, Sender, SendError};
 
 use users;
+use log::warn;
 
-use error;
-use config;
+use crate::error;
+use crate::config;
 use super::Authenticate;
 
 pub struct Auth {
@@ -44,16 +45,16 @@ pub enum Response {
 impl Auth {
 	pub fn spawn(config: config::Auth) -> error::Result<Auth> {
 		let     user    = users::get_current_username().ok_or(error::Auth::UnknownUser)?;
-		let mut methods = Vec::new(): Vec<Box<Authenticate>>;
+		let mut methods = Vec::<Box<dyn Authenticate>>::new();
 
 		#[cfg(feature = "auth-internal")]
 		methods.push(box super::internal::new(config.get("internal"))?);
 
 		#[cfg(feature = "auth-pam")]
-		methods.push(box super::pam::new(config.get("pam"))?);
+		methods.push(Box::new(super::pam::new(config.get("pam"))?));
 
-		let (sender, i_receiver) = channel();
-		let (i_sender, receiver) = channel();
+		let (sender, i_receiver) = channel::unbounded();
+		let (i_sender, receiver) = channel::unbounded();
 
 		thread::spawn(move || {
 			'main: while let Ok(request) = receiver.recv() {
@@ -67,7 +68,7 @@ impl Auth {
 						}
 
 						for method in &mut methods {
-							if let Ok(true) = method.authenticate(&user, &password) {
+							if let Ok(true) = method.authenticate(user.to_str().unwrap(), &password) {
 								sender.send(Response::Success).unwrap();
 								continue 'main;
 							}

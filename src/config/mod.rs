@@ -50,17 +50,6 @@ impl Default for OnSuspend {
 }
 
 fn seconds(value: Option<&toml::Value>) -> Option<u32> {
-	macro_rules! try {
-		($body:expr) => (
-			if let Ok(value) = $body {
-				value: u32
-			}
-			else {
-				return None;
-			}
-		);
-	}
-
 	if value.is_none() {
 		return None;
 	}
@@ -77,13 +66,13 @@ fn seconds(value: Option<&toml::Value>) -> Option<u32> {
 		toml::Value::String(ref value) => {
 			match value.split(':').collect::<Vec<&str>>()[..] {
 				[hours, minutes, seconds] =>
-					Some(try!(hours.parse()) * 60 * 60 + try!(minutes.parse()) * 60 + try!(seconds.parse())),
+					Some(hours.parse::<u32>().ok()? * 60 * 60 + minutes.parse::<u32>().ok()? * 60 + seconds.parse::<u32>().ok()?),
 
 				[minutes, seconds] =>
-					Some(try!(minutes.parse()) * 60 + try!(seconds.parse())),
+					Some(minutes.parse::<u32>().ok()? * 60 + seconds.parse::<u32>().ok()?),
 
 				[seconds] =>
-					Some(try!(seconds.parse())),
+					Some(seconds.parse::<u32>().ok()?),
 
 				_ =>
 					None

@@ -24,7 +24,7 @@ pub struct Auth(pub(super) Arc<RwLock<Data>>);
 
 #[derive(Debug)]
 pub(super) struct Data {
-	pub table: toml::Table,
+	pub table: toml::value::Table,
 }
 
 impl Default for Data {
@@ -36,14 +36,14 @@ impl Default for Data {
 }
 
 impl Auth {
-	pub fn load(&self, table: &toml::Table) {
+	pub fn load(&self, table: &toml::value::Table) {
 		if let Some(table) = table.get("auth").and_then(|v| v.as_table()) {
 			self.0.write().unwrap().table = table.clone();
 		}
 	}
 
 	/// Get the configuration for a specific authorization module.
-	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::Table {
+	pub fn get<S: AsRef<str>>(&self, name: S) -> toml::value::Table {
 		self.0.read().unwrap().table.get(name.as_ref())
 			.and_then(|v| v.as_table()).cloned().unwrap_or_default()
 	}

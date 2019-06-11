@@ -37,9 +37,9 @@ impl Default for Data {
 }
 
 impl Interface {
-	pub fn load(&self, table: &toml::Table) {
+	pub fn load(&self, table: &toml::value::Table) {
 		if let Some(table) = table.get("interface").and_then(|v| v.as_table()) {
-			if let Some(array) = table.get("ignore").and_then(|v| v.as_slice()) {
+			if let Some(array) = table.get("ignore").and_then(|v| v.as_array()) {
 				self.0.write().unwrap().ignore = array.iter()
 					.filter(|v| v.as_str().is_some())
 					.map(|v| v.as_str().unwrap().to_string())

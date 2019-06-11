@@ -19,10 +19,10 @@ use std::sync::Arc;
 use std::ops::Deref;
 
 use xcb;
-use xcb_util::icccm;
+use xcbu::icccm;
 
-use error;
-use platform::{self, Display};
+use crate::error;
+use crate::platform::{self, Display};
 
 pub struct Window {
 	display: Arc<Display>,

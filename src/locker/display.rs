@@ -19,10 +19,7 @@ use std::sync::Arc;
 use std::ops::Deref;
 
 use xcb;
-
-use error;
-use config;
-use platform;
+use crate::{error, config, platform};
 
 pub struct Display {
 	display: Arc<platform::Display>,
@@ -56,7 +53,7 @@ impl Display {
 		}
 
 		let display = Arc::new(Display {
-			display: display,
+			display: display.clone(),
 
 			randr: randr.is_some(),
 			dpms:  dpms.is_some(),
@@ -143,19 +140,8 @@ impl Display {
 	}
 
 	/// Observe events on the given window and all its children.
-	pub fn observe(&self, window: u32) {
-		macro_rules! try {
-			($body:expr) => (
-				if let Ok(value) = $body {
-					value
-				}
-				else {
-					return;
-				}
-			);
-		}
-
-		let query = try!(xcb::query_tree(self, window).get_reply());
+	pub fn observe(&self, window: u32) -> error::Result<()> {
+		let query = xcb::query_tree(self, window).get_reply()?;
 
 		// Return if the window is one of ours.
 		{
@@ -165,22 +151,24 @@ impl Display {
 
 			if let Ok(reply) = reply {
 				if reply.type_() == xcb::ATOM_CARDINAL {
-					return;
+					return Ok(());
 				}
 			}
 		}
 
 		// Start listening for activity events from the window making sure to not
 		// break it, by excluding various events.
-		let attrs = try!(xcb::get_window_attributes(self, window).get_reply());
-		try!(xcb::change_window_attributes_checked(self, window, &[
+		let attrs = xcb::get_window_attributes(self, window).get_reply()?;
+		xcb::change_window_attributes_checked(self, window, &[
 			(xcb::CW_EVENT_MASK, (attrs.all_event_masks() | attrs.do_not_propagate_mask() as u32) &
 				(xcb::EVENT_MASK_KEY_PRESS | xcb::EVENT_MASK_KEY_RELEASE) |
-				(xcb::EVENT_MASK_POINTER_MOTION | xcb::EVENT_MASK_SUBSTRUCTURE_NOTIFY))]).request_check());
+				(xcb::EVENT_MASK_POINTER_MOTION | xcb::EVENT_MASK_SUBSTRUCTURE_NOTIFY))]).request_check()?;
 
 		for &child in query.children() {
-			self.observe(child);
+			self.observe(child)?;
 		}
+
+		Ok(())
 	}
 }
 

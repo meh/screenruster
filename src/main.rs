@@ -15,33 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(type_ascription, question_mark, associated_type_defaults)]
-#![feature(mpsc_select, stmt_expr_attributes, box_syntax, slice_patterns)]
-#![feature(pub_restricted)]
+#![feature(concat_idents)]
 
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-
-extern crate clap;
 use clap::{ArgMatches, Arg, App, SubCommand};
-
-extern crate xdg;
-extern crate toml;
-extern crate rand;
-extern crate users;
-extern crate dbus;
-
-#[cfg(feature = "auth-pam")]
-extern crate pam_sys as pam;
-
-extern crate libc;
-extern crate xcb;
-extern crate xcb_util;
-extern crate xkbcommon;
-
-#[macro_use]
-extern crate screenruster_saver as api;
+use channel::select;
+use log::info;
 
 mod error;
 
@@ -67,7 +45,7 @@ mod timer;
 use timer::Timer;
 
 fn main() {
-	env_logger::init().unwrap();
+	env_logger::init();
 
 	let mut app = App::new("screenruster")
 		.version(env!("CARGO_PKG_VERSION"))
@@ -193,9 +171,6 @@ fn exit<T>(value: error::Result<T>) -> T {
 			value,
 
 		Err(error) => match error {
-			Error::Parse =>
-				error!(1, "The configuration file has a syntax error."),
-
 			Error::DBus(error::DBus::AlreadyRegistered) =>
 				error!(10, "Another screen saver is currently running."),
 
@@ -214,7 +189,7 @@ fn preview(matches: &ArgMatches) -> error::Result<()> {
 
 	loop {
 		match preview.recv().unwrap() {
-			preview::Response::Done(..) => {
+			preview::Response::Done => {
 				break;
 			}
 		}
@@ -226,7 +201,7 @@ fn preview(matches: &ArgMatches) -> error::Result<()> {
 fn daemon(matches: &ArgMatches) -> error::Result<()> {
 	use std::time::{Instant, SystemTime};
 	use std::collections::HashSet;
-	use rand::{self, Rng};
+	use rand::Rng;
 
 	// Timer report IDs.
 	const GET_ACTIVE_TIME:       u64 = 1;
@@ -257,10 +232,10 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 	let interface = Interface::spawn(config.interface())?;
 	let locker    = Locker::spawn(config.clone())?;
 
-	let mut locked    = None: Option<Instant>;
-	let mut started   = None: Option<Instant>;
-	let mut blanked   = None: Option<Instant>;
-	let mut suspended = None: Option<SystemTime>;
+	let mut locked    = None::<Instant>;
+	let mut started   = None::<Instant>;
+	let mut blanked   = None::<Instant>;
+	let mut suspended = None::<SystemTime>;
 
 	let mut inhibitors = HashSet::new();
 	let mut throttlers = HashSet::new();
@@ -344,16 +319,10 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 		);
 	}
 
-	// XXX: select! is icky, this works around shadowing the outer name
-	let l = &*locker;
-	let a = &*auth;
-	let s = &*interface;
-	let t = &*timer;
-
 	loop {
 		select! {
 			// Locker events.
-			event = l.recv() => {
+			recv(locker) -> event => {
 				match event.unwrap() {
 					// Register timeout.
 					locker::Response::Timeout(what) => {
@@ -397,7 +366,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			},
 
 			// Authentication events.
-			event = a.recv() => {
+			recv(auth) -> event => {
 				match event.unwrap() {
 					auth::Response::Success => {
 						info!("authorization: success");
@@ -415,7 +384,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			},
 
 			// DBus events.
-			event = s.recv() => {
+			recv(interface) -> event => {
 				match event.unwrap() {
 					interface::Request::Reload(source) => {
 						config.reset();
@@ -546,7 +515,7 @@ fn daemon(matches: &ArgMatches) -> error::Result<()> {
 			},
 
 			// Timer events.
-			event = t.recv() => {
+			recv(timer) -> event => {
 				match event.unwrap() {
 					timer::Response::Report { id: GET_ACTIVE_TIME, started, .. } => {
 						interface.response(interface::Response::ActiveTime(started.map_or(0, |i| i.elapsed().as_secs()))).unwrap();

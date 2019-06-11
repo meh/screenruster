@@ -1,6 +1,7 @@
 [package]
 name    = "screenruster"
 version = "0.1.9"
+edition = "2018"
 
 authors = ["meh. <meh@schizofreni.co>"]
 license = "GPL-3.0"
@@ -16,28 +17,26 @@ default = ["auth-pam"]
 auth-internal = []
 
 # PAM authorization support.
-auth-pam = ["pam-sys"]
+auth-pam = ["pam"]
 
 # Respect PAM account management.
 auth-pam-accounts = ["auth-pam"]
 
 [dependencies]
-log        = "0.3"
-env_logger = "0.3"
+log        = "0.4"
+env_logger = "0.6"
 
-clap  = "2"
-xdg   = "2"
-toml  = "0.1"
-rand  = "0.3"
-users = "0.5"
-dbus  = "0.3"
+clap     = "2"
+app_dirs = "1.1"
+toml     = "0.5"
+rand     = "0.6"
+users    = "0.9"
+dbus     = "0.6"
+channel  = { package = "crossbeam-channel", version = "0.3" }
+pam      = { package = "pam-sys", optional = true, version = "0.5" }
 
-libc               = "0.2"
-xcb                = { version = "0.7.5", features = ["randr", "dpms", "xkb", "thread"] }
-xcb-util           = { version = "0.1.4", features = ["icccm", "thread"] }
-xkbcommon          = { version = "0.2",   features = ["x11"] }
-screenruster-saver = { version = "0.1",   default-features = false }
-
-[dependencies.pam-sys]
-version = "0.4"
-optional = true
+libc  = "0.2"
+xcb   = { version = "0.8", features = ["randr", "dpms", "xkb", "thread"] }
+xcbu  = { package = "xcb-util", version = "0.2", features = ["icccm", "ewmh", "thread"] }
+xkb   = { version = "0.2", features = ["x11"] }
+api   = { package = "screenruster-saver", version = "0.2", default-features = false, path = "../saver" }
