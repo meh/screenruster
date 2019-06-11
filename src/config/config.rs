@@ -22,7 +22,7 @@ use std::sync::{Arc, RwLock};
 
 use toml;
 use log::error;
-use app_dirs::{AppInfo, AppDataType, app_root};
+use app_dirs::{AppInfo, AppDataType, get_app_root};
 
 use crate::error;
 use super::{Locker, Interface, Timer, Auth, Saver};
@@ -63,8 +63,8 @@ impl Config {
 			path
 		}
 		else {
-			app_root(AppDataType::UserConfig,
-				&AppInfo { name: "cancer", author: "meh." })?.join("config.toml")
+			get_app_root(AppDataType::UserConfig,
+				&AppInfo { name: "screenruster", author: "meh." })?.join("config.toml")
 		};
 
 		let table = if let Ok(mut file) = File::open(path) {
