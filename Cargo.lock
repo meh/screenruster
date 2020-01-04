@@ -281,7 +281,7 @@ dependencies = [
  "log 0.4.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "pam-sys 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "screenruster-saver 0.2.1",
+ "screenruster-saver 0.2.2",
  "toml 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "users 0.9.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "xcb 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "screenruster-saver"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "crossbeam-channel 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.7.1 (registry+https://github.com/rust-lang/crates.io-index)",
