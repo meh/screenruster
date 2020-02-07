@@ -88,8 +88,8 @@ impl Keyboard {
 		let state   = xkb::x11::state(&display, device, &keymap)?;
 
 		let (table, compose) = {
-			let     locale = locale.map(String::from).or(env::var("LANG").ok()).unwrap_or("C".into());
-			let mut table  = if let Ok(table) = xkb::compose::Table::new(&context, &locale, Default::default()) {
+			let locale = locale.map(String::from).or(env::var("LANG").ok()).unwrap_or("C".into());
+			let table  = if let Ok(table) = xkb::compose::Table::new(&context, &locale, Default::default()) {
 				table
 			}
 			else {

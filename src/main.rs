@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(concat_idents)]
-
 use clap::{ArgMatches, Arg, App, SubCommand};
 use channel::select;
 use log::info;

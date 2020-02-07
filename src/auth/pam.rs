@@ -50,7 +50,7 @@ impl Authenticate for Auth {
 		let password = CString::new(password)?;
 
 		unsafe {
-			let mut handle = mem::uninitialized::<*mut PamHandle>();
+			let mut handle = mem::MaybeUninit::<*mut PamHandle>::uninit();
 			let     conv   = PamConversation {
 				conv:     Some(conversation),
 				data_ptr: &Info { user: user.as_ptr(), password: password.as_ptr() } as *const _ as *mut _,
@@ -73,30 +73,30 @@ impl Authenticate for Auth {
 							Ok(()),
 
 						error => {
-							pam_end(&mut *handle, error as i32);
+							pam_end(&mut *handle.assume_init(), error as i32);
 							Err(error::auth::Pam(error))
 						}
 					}
 				);
 
 				(start) => (
-					pam!(check pam_start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, &mut handle as *mut *mut _ as *mut *const _))
+					pam!(check pam_start(b"screenruster\x00".as_ptr() as *const _, ptr::null(), &conv, handle.as_mut_ptr() as *mut *const _))
 				);
 
 				(set_item $ty:ident => $value:expr) => (
-					pam!(checked pam_set_item(&mut *handle, PamItemType::$ty as i32, strdup($value.as_ptr() as *const _) as *mut _))
+					pam!(checked pam_set_item(&mut *handle.assume_init(), PamItemType::$ty as i32, strdup($value.as_ptr() as *const _) as *mut _))
 				);
 
 				(authenticate) => (
-					pam!(checked pam_authenticate(&mut *handle, PamFlag::NONE as i32))
+					pam!(checked pam_authenticate(&mut *handle.assume_init(), PamFlag::NONE as i32))
 				);
 
 				(end) => (
-					pam_end(&mut *handle, PamReturnCode::SUCCESS as i32);
+					pam_end(&mut *handle.assume_init(), PamReturnCode::SUCCESS as i32);
 				);
 
 				($name:ident $flag:ident) => (
-					pam!(checked concat_idents!(pam_, $name)(&mut *handle, PamFlag::$flag as i32))
+					pam!(checked $name(&mut *handle.assume_init(), PamFlag::$flag as i32))
 				);
 
 				($name:ident) => (
@@ -112,12 +112,12 @@ impl Authenticate for Auth {
 			// some PAM modules require it to be called to work properly, so make the
 			// erroring optional.
 			if self.accounts {
-				pam!(acct_mgmt)?;
-				pam!(setcred REINITIALIZE_CRED)?;
+				pam!(pam_acct_mgmt)?;
+				pam!(pam_setcred REINITIALIZE_CRED)?;
 				pam!(end);
 			}
 			else {
-				if pam!(acct_mgmt).is_ok() {
+				if pam!(pam_acct_mgmt).is_ok() {
 					pam!(end);
 				}
 			}

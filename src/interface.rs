@@ -16,13 +16,21 @@
 // along with screenruster.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::path::Path;
-use std::time::SystemTime;
+use std::time::{SystemTime, Duration};
 use std::thread;
 use std::sync::Arc;
 use std::ops::Deref;
 use channel::{self, Receiver, Sender, SendError};
 
-use dbus;
+use dbus::{
+	Message,
+	blocking::{
+		LocalConnection as Connection,
+		stdintf::org_freedesktop_dbus::RequestNameReply,
+		BlockingSender as _,
+	},
+	channel::{Sender as _}
+};
 use log::error;
 
 use crate::error;
@@ -145,7 +153,7 @@ pub enum Signal {
 impl Interface {
 	/// Send a reload request.
 	pub fn reload<P: AsRef<Path>>(path: Option<P>) -> error::Result<()> {
-		let mut message = dbus::Message::new_method_call(
+		let mut message = Message::new_method_call(
 				"meh.rust.ScreenSaver",
 				"/meh/rust/ScreenSaver",
 				"meh.rust.ScreenSaver",
@@ -155,126 +163,116 @@ impl Interface {
 			message = message.append1(value.as_ref().to_string_lossy().into_owned());
 		}
 
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(message)?;
+		Connection::new_session()?.send(message)?;
 
 		Ok(())
 	}
 
 	/// Send a lock request.
 	pub fn lock() -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"Lock")?)?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Lock")?)?;
 
 		Ok(())
 	}
 
 	/// Send an activation request.
 	pub fn activate() -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"SetActive")?
-					.append1(true))?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"SetActive")?
+				.append1(true))?;
 
 		Ok(())
 	}
 
 	/// Send a deactivation request.
 	pub fn deactivate() -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"SimulateUserActivity")?)?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"SimulateUserActivity")?)?;
 
 		Ok(())
 	}
 
 	/// Send an inhibition request.
 	pub fn inhibit() -> error::Result<u32> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send_with_reply_and_block(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"Inhibit")?
-					.append2("screenruster", "requested by user")
-				, 5_000)?
-			.get1::<u32>()
-			.ok_or(dbus::Error::new_custom("inibhition", "wrong response").into())
+		Connection::new_session()?.send_with_reply_and_block(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Inhibit")?
+				.append2("screenruster", "requested by user")
+			, Duration::from_millis(5_000))?
+		.get1::<u32>()
+		.ok_or(dbus::Error::new_custom("inibhition", "wrong response").into())
 	}
 
 	/// Send an uninhibition request.
 	pub fn uninhibit(cookie: u32) -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"UnInhibit")?
-					.append1(cookie))?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"UnInhibit")?
+				.append1(cookie))?;
 
 		Ok(())
 	}
 
 	/// Send a throttle request.
 	pub fn throttle() -> error::Result<u32> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send_with_reply_and_block(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"Throttle")?
-					.append2("screenruster", "requested by user")
-				, 5_000)?
-			.get1::<u32>()
-			.ok_or(dbus::Error::new_custom("throttle", "wrong response").into())
+		Connection::new_session()?.send_with_reply_and_block(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"Throttle")?
+				.append2("screenruster", "requested by user")
+			, Duration::from_millis(5_000))?
+		.get1::<u32>()
+		.ok_or(dbus::Error::new_custom("throttle", "wrong response").into())
 	}
 
 	/// Send an unthrottle request.
 	pub fn unthrottle(cookie: u32) -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"org.gnome.ScreenSaver",
-				"/org/gnome/ScreenSaver",
-				"org.gnome.ScreenSaver",
-				"UnThrottle")?
-					.append1(cookie))?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"org.gnome.ScreenSaver",
+			"/org/gnome/ScreenSaver",
+			"org.gnome.ScreenSaver",
+			"UnThrottle")?
+				.append1(cookie))?;
 
 		Ok(())
 	}
 
 	/// Send a suspension request.
 	pub fn suspend() -> error::Result<u32> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send_with_reply_and_block(dbus::Message::new_method_call(
-				"meh.rust.ScreenSaver",
-				"/meh/rust/ScreenSaver",
-				"meh.rust.ScreenSaver",
-				"Suspend")?
-					.append2("screenruster", "requested by user")
-				, 5_000)?
-			.get1::<u32>()
-			.ok_or(dbus::Error::new_custom("suspend", "wrong response").into())
+		Connection::new_session()?.send_with_reply_and_block(Message::new_method_call(
+			"meh.rust.ScreenSaver",
+			"/meh/rust/ScreenSaver",
+			"meh.rust.ScreenSaver",
+			"Suspend")?
+				.append2("screenruster", "requested by user")
+			, Duration::from_millis(5_000))?
+		.get1::<u32>()
+		.ok_or(dbus::Error::new_custom("suspend", "wrong response").into())
 	}
 
 	/// Send a resume request.
 	pub fn resume(cookie: u32) -> error::Result<()> {
-		dbus::Connection::get_private(dbus::BusType::Session)?
-			.send(dbus::Message::new_method_call(
-				"meh.rust.ScreenSaver",
-				"/meh/rust/ScreenSaver",
-				"meh.rust.ScreenSaver",
-				"Resume")?
-					.append1(cookie))?;
+		Connection::new_session()?.send(Message::new_method_call(
+			"meh.rust.ScreenSaver",
+			"/meh/rust/ScreenSaver",
+			"meh.rust.ScreenSaver",
+			"Resume")?
+				.append1(cookie))?;
 
 		Ok(())
 	}
@@ -288,11 +286,11 @@ impl Interface {
 
 		macro_rules! dbus {
 			(connect system) => (
-				dbus::Connection::get_private(dbus::BusType::System)
+				Connection::new_system()
 			);
 
 			(connect session) => (
-				match dbus::Connection::get_private(dbus::BusType::Session) {
+				match Connection::new_session() {
 					Ok(value) => {
 						value
 					}
@@ -305,8 +303,8 @@ impl Interface {
 			);
 
 			(register $conn:expr, $name:expr) => (
-				match $conn.register_name($name, dbus::NameFlag::DoNotQueue as u32) {
-					Ok(dbus::RequestNameReply::Exists) => {
+				match $conn.request_name($name, false, false, true) {
+					Ok(RequestNameReply::Exists) => {
 						g_sender.send(Err(error::DBus::AlreadyRegistered.into())).unwrap();
 						return;
 					}
@@ -323,7 +321,7 @@ impl Interface {
 			);
 
 			(watch $conn:expr, $filter:expr) => (
-				$conn.add_match($filter)
+				$conn.add_match_no_cb($filter)
 			);
 
 			(ready) => (
@@ -361,8 +359,8 @@ impl Interface {
 
 			thread::spawn(move || {
 				/// Inhibits system suspension temporarily.
-				fn inhibit(c: &dbus::Connection) -> Option<dbus::OwnedFd> {
-					dbus!(try c.send_with_reply_and_block(dbus!(try dbus::Message::new_method_call(
+				fn inhibit(c: &Connection) -> Option<dbus::arg::OwnedFd> {
+					dbus!(try c.send_with_reply_and_block(dbus!(try Message::new_method_call(
 						"org.freedesktop.login1",
 						"/org/freedesktop/login1",
 						"org.freedesktop.login1.Manager",
@@ -370,7 +368,7 @@ impl Interface {
 							.append1("sleep")
 							.append1("ScreenRuster")
 							.append1("Preparing for sleep.")
-							.append1("delay"), 1_000))
+							.append1("delay"), Duration::from_millis(1_000)))
 						.get1()
 				}
 
@@ -382,29 +380,46 @@ impl Interface {
 				// Watch for PrepareForSleep events from SystemD.
 				dbus!(watch system, "path='/org/freedesktop/login1',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'").unwrap();
 
-				for item in system.iter(1_000_000_000) {
-					if let dbus::ConnectionItem::Signal(m) = item {
-						match (&*m.path().unwrap(), &*m.interface().unwrap(), &*m.member().unwrap()) {
-							("/org/freedesktop/login1", "org.freedesktop.login1.Manager", "PrepareForSleep") => {
-								if let Some(preparing) = m.get1() {
-									sender.send(Request::PrepareForSleep(
-										if preparing { Some(SystemTime::now()) } else { None })).unwrap();
+				#[derive(Debug)]
+				pub struct PrepareForSleep {
+					pub arg0: bool,
+				}
 
-									// In case the system is suspending, unlock the suspension,
-									// otherwise delay the next.
-									if preparing {
-										inhibitor.take();
-									}
-									else {
-										inhibitor = inhibit(&system);
-									}
-								}
-							}
-
-							_ => ()
-						}
+				impl dbus::arg::AppendAll for PrepareForSleep {
+					fn append(&self, i: &mut dbus::arg::IterAppend) {
+						dbus::arg::RefArg::append(&self.arg0, i);
 					}
 				}
+
+				impl dbus::arg::ReadAll for PrepareForSleep {
+					fn read(i: &mut dbus::arg::Iter) -> Result<Self, dbus::arg::TypeMismatchError> {
+						Ok(PrepareForSleep {
+							arg0: i.read()?,
+						})
+					}
+				}
+
+				impl dbus::message::SignalArgs for PrepareForSleep {
+					const NAME: &'static str = "PrepareForSleep";
+					const INTERFACE: &'static str = "org.freedesktop.login1.Manager";
+				}
+
+				system.with_proxy("org.freedesktop.login1.Manager", "/org/freedesktop/login1", Duration::from_micros(5_000))
+					.match_signal(|p: PrepareForSleep, _: &Connection, _: &Message| {
+						sender.send(Request::PrepareForSleep(
+							if p.arg0 { Some(SystemTime::now()) } else { None })).unwrap();
+
+						// In case the system is suspending, unlock the suspension,
+						// otherwise delay the next.
+						if p.arg0 {
+							inhibitor.take();
+						}
+						else {
+							inhibitor = inhibit(&system);
+						}
+
+						true
+					});
 			});
 		}
 
@@ -413,8 +428,8 @@ impl Interface {
 			let sender = sender.clone();
 
 			thread::spawn(move || {
-				let session = dbus!(connect session);
-				let f       = dbus::tree::Factory::new_sync::<()>();
+				let mut session = dbus!(connect session);
+				let f           = dbus::tree::Factory::new_sync::<()>();
 
 				dbus!(register session, "org.gnome.ScreenSaver");
 				dbus!(register session, "meh.rust.ScreenSaver");
@@ -638,25 +653,25 @@ impl Interface {
 						.add_s(begin.clone())
 						.add_s(end.clone())));
 
-				tree.set_registered(&session, true).unwrap();
+				tree.start_receive(&session);
 
-				for item in tree.run(&session, session.iter(500)) {
-					if let dbus::ConnectionItem::Nothing = item {
-						while let Ok(signal) = signals.try_recv() {
-							session.send(match signal {
-								Signal::Active(status) =>
-									active.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()).append1(status),
+				loop {
+					session.process(Duration::from_millis(500));
 
-								Signal::SessionIdle(status) =>
-									idle.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()).append1(status),
+					while let Ok(signal) = signals.try_recv() {
+						session.send(match signal {
+							Signal::Active(status) =>
+								active.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()).append1(status),
 
-								Signal::AuthenticationRequest(true) =>
-									begin.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()),
+							Signal::SessionIdle(status) =>
+								idle.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()).append1(status),
 
-								Signal::AuthenticationRequest(false) =>
-									end.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()),
-							}).unwrap();
-						}
+							Signal::AuthenticationRequest(true) =>
+								begin.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()),
+
+							Signal::AuthenticationRequest(false) =>
+								end.msg(&"/meh/rust/ScreenSaver".into(), &"org.gnome.ScreenSaver".into()),
+						}).unwrap();
 					}
 				}
 			});

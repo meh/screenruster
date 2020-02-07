@@ -31,12 +31,12 @@ app_dirs = "1.1"
 toml     = "0.5"
 rand     = "0.7"
 users    = "0.9"
-dbus     = "0.6"
-channel  = { package = "crossbeam-channel", version = "0.3" }
+dbus     = "0.8"
+channel  = { package = "crossbeam-channel", version = "0.4" }
 pam      = { package = "pam-sys", optional = true, version = "0.5" }
 
 libc  = "0.2"
 xcb   = { version = "0.9", features = ["randr", "dpms", "xkb", "thread"] }
-xcbu  = { package = "xcb-util", version = "0.2.2", features = ["icccm", "ewmh", "thread"] }
+xcbu  = { package = "xcb-util", version = "0.3", features = ["icccm", "ewmh", "thread"] }
 xkb   = { version = "0.2", features = ["x11"] }
 api   = { package = "screenruster-saver", version = "0.2", default-features = false, path = "../saver" }
